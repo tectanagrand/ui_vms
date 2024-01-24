@@ -8,9 +8,11 @@ export default function RefreshButton(props) {
   };
   return (
     <Tooltip title={<Typography>Refresh</Typography>}>
-      <LoadingButton loading={props.isLoading} onClick={refreshBtn} sx={props.sx} variant={'contained'}>
-        <Refresh></Refresh>
-      </LoadingButton>
+      <span>
+        <LoadingButton loading={props.isLoading} onClick={refreshBtn} sx={props.sx} variant={'contained'}>
+          <Refresh></Refresh>
+        </LoadingButton>
+      </span>
     </Tooltip>
   );
 }
