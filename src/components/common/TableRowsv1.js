@@ -42,7 +42,7 @@ export default function Row({ header, row, length, DetComp }) {
         <TableRow key={row.id + 'rowDetail'}>
           <TableCell key={row.id + 'detailsCol'} colSpan={length} sx={{ padding: 0, margin: 0 }}>
             <Collapse key={row.id + 'collapsible'} in={open} timeout="auto" unmountOnExit>
-              <DetComp data={row} />
+              <DetComp data={row} trigger={open} />
             </Collapse>
           </TableCell>
         </TableRow>

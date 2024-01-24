@@ -92,7 +92,7 @@ export default function TableLayout({ data, header, lengthRow, detailsComp }) {
         <Table stickyHeader aria-label="sticky table">
           <TableHead>
             <TableRow>
-              {data.length != 0 && 'details' in data[0] && <TableCell key="details">details</TableCell>}
+              {detailsComp !== undefined && <TableCell key="details">details</TableCell>}
               {header.map((item) => (
                 <TableCell key={item.header}>{item.header}</TableCell>
               ))}
