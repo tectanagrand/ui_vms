@@ -2,7 +2,6 @@ import { axiosPrivate } from 'src/api/axios';
 import { useEffect } from 'react';
 import useRefreshToken from './useRefreshToken';
 import { useSession } from 'src/provider/sessionProvider';
-import Cookies from 'js-cookie';
 
 const useAxiosPrivate = () => {
   const refresh = useRefreshToken();
