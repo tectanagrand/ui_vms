@@ -59,14 +59,14 @@ export default function ListMasterBank() {
       renderCell: (item) => {
         let Buttons = [];
         Buttons.push(
-          <Tooltip title="Edit">
+          <Tooltip key={item.id + 'edit'} title="Edit">
             <IconButton onClick={handleButtonAction('Edit', item.row)}>
               <Edit />
             </IconButton>
           </Tooltip>
         );
         Buttons.push(
-          <Tooltip title="Delete">
+          <Tooltip key={item.id + 'delete'} title="Delete">
             <IconButton onClick={handleButtonAction('Delete', item.row)}>
               <Delete />
             </IconButton>
