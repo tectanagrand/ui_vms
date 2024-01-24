@@ -9,19 +9,65 @@ import {
   Button,
   Typography,
   Skeleton,
+  Tooltip,
+  IconButton,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
 import { useSession } from 'src/provider/sessionProvider';
-import TableLayout from 'src/components/common/TableLayout';
-import axios from 'axios';
+import TableLayout from 'src/components/common/TableLayoutv1';
+import { Check, DoDisturb } from '@mui/icons-material';
 import useAxiosPrivate from 'src/hooks/useAxiosPrivate';
 import { LoadingButton } from '@mui/lab';
 import RefreshButton from 'src/components/common/RefreshButton';
+import ReqStatDetail from 'src/components/common/ReqStatDetail';
 
 export default function ListReqStat() {
   const axiosPrivate = useAxiosPrivate();
   const [btnClicked, setBtnclicked] = useState();
-  const columns = ['Ticket Number', 'Date', 'Requestor', 'Request', 'Vendor Code', 'Vendor Name'];
+  const columns = [
+    { data: 'Ticket Number', header: 'Ticket Number' },
+    {
+      data: 'Date',
+      header: 'Date',
+    },
+    {
+      data: 'Requestor',
+      header: 'Requestor',
+    },
+    {
+      data: 'RequestDesc',
+      header: 'Request Description',
+    },
+    {
+      data: 'Vendor Code',
+      header: 'Vendor Code',
+    },
+    {
+      data: 'Vendor Name',
+      header: 'Vendor Name',
+    },
+    {
+      header: 'Action',
+      renderCell: (item) => {
+        if (item.is_active) {
+          return (
+            <>
+              <Tooltip key={`${item.id}.reqdescacc`} title={<Typography>Accept</Typography>}>
+                <IconButton sx={{ backgroundColor: '#4ef542', mx: 1 }} onClick={() => handleAppr('accept', item)}>
+                  <Check></Check>
+                </IconButton>
+              </Tooltip>
+              <Tooltip key={`${item.id}.reqdescrej`} title={<Typography>Reject</Typography>}>
+                <IconButton sx={{ backgroundColor: '#f2573f', mx: 1 }} onClick={() => handleAppr('reject', item)}>
+                  <DoDisturb></DoDisturb>
+                </IconButton>
+              </Tooltip>
+            </>
+          );
+        }
+      },
+    },
+  ];
   const { session } = useSession();
   const [btnState, setBtn] = useState(['accept', 'reject']);
   const [refreshBtn, setRefresh] = useState(true);
@@ -45,10 +91,10 @@ export default function ListReqStat() {
     setFormstat({ ...formStat, stat: false });
   };
 
-  const handleAppr = (type, id) => {
+  const handleAppr = (type, data) => {
     setOpenval(true);
     setAppr(type);
-    setVendata(ticket.find((item) => item.id === id));
+    setVendata(ticket.find((item) => item.id === data.id));
   };
 
   const buttonRefreshAct = () => {
@@ -72,7 +118,9 @@ export default function ListReqStat() {
       setOpenval(false);
       setReload(!reload);
       setBtnclicked(false);
+      setRefresh(true);
     } catch (error) {
+      setRefresh(true);
       setBtnclicked(false);
       setFormstat({
         stat: true,
@@ -131,7 +179,7 @@ export default function ListReqStat() {
       />
 
       {ticket != undefined ? (
-        <TableLayout data={ticket} buttons={btnState} lengthRow={colLength} onAction={handleAppr} header={columns} />
+        <TableLayout data={ticket} lengthRow={colLength} header={columns} detailsComp={ReqStatDetail} />
       ) : (
         <Box>
           <Skeleton animation="wave" height={100} />
