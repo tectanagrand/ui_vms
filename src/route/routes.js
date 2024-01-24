@@ -7,7 +7,7 @@ import LoginPage from 'src/pages/LoginPage';
 import Dashboard from 'src/pages/dashboard/Dashboard';
 import Cookies from 'js-cookie';
 import { ListTicket, loaderTicket } from 'src/pages/dashboard/ListTicket';
-import ListVendor from 'src/pages/dashboard/ListVendor';
+import ListVendor from 'src/pages/dashboard/ListVendorv1';
 import NavSection from 'src/components/nav/NavSection';
 import ListReqStat from 'src/pages/dashboard/ListReqStat';
 import FormUserPage from 'src/pages/FormUserPage';
