@@ -1399,26 +1399,25 @@ function RefactorFormVendorPage() {
                       helperText={`Please insert address without ',' (comma) character`}
                     />
                   </Grid>
-                  {(ticketState === 'CREA' || ticketState === 'FINA') && (
-                    <Grid item xs={9}>
-                      <TextFieldComp
-                        name="street2"
-                        label={t('Address') + ' 2'}
-                        control={control}
-                        readOnly={
-                          !(
-                            (UPDATE.CREA && ticketState === 'CREA' && loader_data.ticket_type === 'PROC') ||
-                            (UPDATE.FINA && ticketState === 'FINA')
-                          )
-                        }
-                        rules={{
-                          maxLength: { value: 160, message: 'Max 160 Character' },
-                          pattern: { value: /^[^,]*$/, message: `Please fill without ',' (comma) character ` },
-                        }}
-                        toUpperCase={true}
-                      />
-                    </Grid>
-                  )}
+                  <Grid item xs={9}>
+                    <TextFieldComp
+                      name="street2"
+                      label={t('Address') + ' 2'}
+                      control={control}
+                      readOnly={
+                        !(
+                          (UPDATE.INIT && ticketState === 'INIT') ||
+                          (UPDATE.CREA && ticketState === 'CREA' && loader_data.ticket_type === 'PROC') ||
+                          (UPDATE.FINA && ticketState === 'FINA')
+                        )
+                      }
+                      rules={{
+                        maxLength: { value: 160, message: 'Max 160 Character' },
+                        pattern: { value: /^[^,]*$/, message: `Please fill without ',' (comma) character ` },
+                      }}
+                      toUpperCase={true}
+                    />
+                  </Grid>
                   <Grid item xs={3}></Grid>
                   <Grid item xs={3}>
                     <SelectComp
@@ -1524,26 +1523,25 @@ function RefactorFormVendorPage() {
                       helperText={`Please insert address without ',' (comma) character`}
                     />
                   </Grid>
-                  {(ticketState === 'CREA' || ticketState === 'FINA') && (
-                    <Grid item xs={9}>
-                      <TextFieldComp
-                        name="street2_npwp"
-                        label={t('Address') + ' 2'}
-                        control={control}
-                        readOnly={
-                          !(
-                            (UPDATE.CREA && ticketState === 'CREA' && loader_data.ticket_type === 'PROC') ||
-                            (UPDATE.FINA && ticketState === 'FINA')
-                          )
-                        }
-                        rules={{
-                          maxLength: { value: 160, message: 'Max 160 Character' },
-                          pattern: { value: /^[^,]*$/, message: `Please fill without ',' (comma) character ` },
-                        }}
-                        toUpperCase={true}
-                      />
-                    </Grid>
-                  )}
+                  <Grid item xs={9}>
+                    <TextFieldComp
+                      name="street2_npwp"
+                      label={t('Address') + ' 2'}
+                      control={control}
+                      readOnly={
+                        !(
+                          (UPDATE.INIT && ticketState === 'INIT') ||
+                          (UPDATE.CREA && ticketState === 'CREA' && loader_data.ticket_type === 'PROC') ||
+                          (UPDATE.FINA && ticketState === 'FINA')
+                        )
+                      }
+                      rules={{
+                        maxLength: { value: 160, message: 'Max 160 Character' },
+                        pattern: { value: /^[^,]*$/, message: `Please fill without ',' (comma) character ` },
+                      }}
+                      toUpperCase={true}
+                    />
+                  </Grid>
                   <Grid item xs={3}></Grid>
                   <Grid item xs={3}>
                     <SelectComp
@@ -1650,26 +1648,25 @@ function RefactorFormVendorPage() {
                       helperText={`Please insert address without ',' (comma) character`}
                     />
                   </Grid>
-                  {(ticketState === 'CREA' || ticketState === 'FINA') && (
-                    <Grid item xs={9}>
-                      <TextFieldComp
-                        name="street2_sppkp"
-                        label={t('Address') + ' 2'}
-                        control={control}
-                        readOnly={
-                          !(
-                            (UPDATE.CREA && ticketState === 'CREA' && loader_data.ticket_type === 'PROC') ||
-                            (UPDATE.FINA && ticketState === 'FINA')
-                          )
-                        }
-                        rules={{
-                          maxLength: { value: 160, message: 'Max 160 Character' },
-                          pattern: { value: /^[^,]*$/, message: `Please fill without ',' (comma) character ` },
-                        }}
-                        toUpperCase={true}
-                      />
-                    </Grid>
-                  )}
+                  <Grid item xs={9}>
+                    <TextFieldComp
+                      name="street2_sppkp"
+                      label={t('Address') + ' 2'}
+                      control={control}
+                      readOnly={
+                        !(
+                          (UPDATE.INIT && ticketState === 'INIT') ||
+                          (UPDATE.CREA && ticketState === 'CREA' && loader_data.ticket_type === 'PROC') ||
+                          (UPDATE.FINA && ticketState === 'FINA')
+                        )
+                      }
+                      rules={{
+                        maxLength: { value: 160, message: 'Max 160 Character' },
+                        pattern: { value: /^[^,]*$/, message: `Please fill without ',' (comma) character ` },
+                      }}
+                      toUpperCase={true}
+                    />
+                  </Grid>
                   <Grid item xs={3}></Grid>
                   <Grid item xs={3}>
                     <SelectComp
