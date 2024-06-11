@@ -594,7 +594,7 @@ function RefactorFormVendorPage() {
         }
       })();
     }
-  }, [compTitle, langCode, chgLocal, loader_data]);
+  }, [compTitle, langCode, chgLocal, loader_data, t]);
 
   useEffect(() => {
     const firstError = Object.keys(errors).reduce((field, a) => {
@@ -1083,7 +1083,7 @@ function RefactorFormVendorPage() {
         // console.log('submitting...');
       }
       setVen_bank((prev) => prev.map((item) => ({ ...item, method: 'update' })));
-      const response = submit.data;
+      const response = await submit.data;
       setFormStat({ stat: true, type: 'success', message: response.message });
       setLoading(false);
       setBtnclick(false);
@@ -1384,14 +1384,15 @@ function RefactorFormVendorPage() {
                         !(
                           (
                             (UPDATE.INIT && ticketState === 'INIT') ||
-                            (UPDATE.CREA && ticketState === 'CREA' && loader_data.ticket_type === 'PROC')
+                            (UPDATE.CREA && ticketState === 'CREA' && loader_data.ticket_type === 'PROC') ||
+                            (UPDATE.FINA && ticketState === 'FINA')
                           )
                           // || (UPDATE.FINA && ticketState === 'FINA')
                         )
                       }
                       rules={{
                         required: 'Please insert this field',
-                        maxLength: { value: 200, message: 'Max 200 Character' },
+                        maxLength: { value: 100, message: 'Max 100 Character' },
                         pattern: { value: /^[^,]*$/, message: `Please fill without ',' (comma) character ` },
                       }}
                       toUpperCase={true}
@@ -1508,14 +1509,15 @@ function RefactorFormVendorPage() {
                         !(
                           (
                             (UPDATE.INIT && ticketState === 'INIT') ||
-                            (UPDATE.CREA && ticketState === 'CREA' && loader_data.ticket_type === 'PROC')
+                            (UPDATE.CREA && ticketState === 'CREA' && loader_data.ticket_type === 'PROC') ||
+                            (UPDATE.FINA && ticketState === 'FINA')
                           )
                           // || (UPDATE.FINA && ticketState === 'FINA')
                         )
                       }
                       rules={{
                         required: 'Please insert this field',
-                        maxLength: { value: 200, message: 'Max 200 Character' },
+                        maxLength: { value: 100, message: 'Max 100 Character' },
                         pattern: { value: /^[^,]*$/, message: `Please fill without ',' (comma) character ` },
                       }}
                       toUpperCase={true}
@@ -1633,14 +1635,15 @@ function RefactorFormVendorPage() {
                         !(
                           (
                             (UPDATE.INIT && ticketState === 'INIT') ||
-                            (UPDATE.CREA && ticketState === 'CREA' && loader_data.ticket_type === 'PROC')
+                            (UPDATE.CREA && ticketState === 'CREA' && loader_data.ticket_type === 'PROC') ||
+                            (UPDATE.FINA && ticketState === 'FINA')
                           )
                           // || (UPDATE.FINA && ticketState === 'FINA')
                         )
                       }
                       rules={{
                         required: 'Please insert this field',
-                        maxLength: { value: 200, message: 'Max 200 Character' },
+                        maxLength: { value: 100, message: 'Max 100 Character' },
                         pattern: { value: /^[^,]*$/, message: `Please fill without ',' (comma) character ` },
                       }}
                       toUpperCase={true}
@@ -2053,7 +2056,7 @@ function RefactorFormVendorPage() {
                 requiredFiles={errors && Object.values(errors.file_atth ?? {})}
                 ref={uploadButRef}
                 fileCheck={getValues('file_atth')}
-                lang={langCode}
+                t={t}
               />
             </AccordionDetails>
           </Accordion>

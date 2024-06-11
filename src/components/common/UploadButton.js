@@ -17,7 +17,6 @@ import { useState, forwardRef, useEffect } from 'react';
 import VenFileTable from '../FormVendor/VenFileTable';
 import { useSession } from 'src/provider/sessionProvider';
 import { LoadingButton } from '@mui/lab';
-import { useTranslation } from 'react-i18next';
 import { Help } from '@mui/icons-material';
 import { useTheme } from '@mui/material/styles';
 
@@ -26,10 +25,9 @@ const Alert = forwardRef(function Alert(props, ref) {
 });
 
 const UploadButton = forwardRef(function UploadButton(
-  { inputTypes, onChildDataChange, iniData, idParent, allow, loadData, deleteFile, requiredFiles, fileCheck, lang },
+  { inputTypes, onChildDataChange, iniData, idParent, allow, loadData, deleteFile, requiredFiles, fileCheck, t },
   ref
 ) {
-  const { t } = useTranslation('translation', { lng: lang });
   const { session } = useSession();
   const [typeFile, setTypeFile] = useState(0);
   const [statUpload, setStatUpload] = useState({ stat: false, type: '', message: '' });
@@ -41,7 +39,7 @@ const UploadButton = forwardRef(function UploadButton(
   const sendDataParent = (file_ven) => {
     let items = [];
     file_ven.map((item) => {
-      let temp = { ...item };
+      let temp = { ...item, desc_file: item.desc_file };
       delete temp.id;
       items.push(temp);
     });
@@ -52,12 +50,22 @@ const UploadButton = forwardRef(function UploadButton(
     if (Object.keys(iniData).length != 0) {
       const covtData = [];
       iniData.map((item) => {
-        covtData.push({ ...item, method: '', id: item.file_id });
+        covtData.push({ ...item, method: '', id: item.file_id, desc_file: item.desc_file });
       });
       setFileStaged([...covtData]);
       sendDataParent([...covtData]);
     }
   }, [iniData]);
+
+  useEffect(() => {
+    console.log('t changed');
+    if (fileStaged.length > 0) {
+      const covtData = fileStaged.map((item) => ({ ...item, desc_file: item.desc_file }));
+      console.log(covtData);
+      setFileStaged(covtData);
+      sendDataParent(covtData);
+    }
+  }, [iniData, t]);
 
   const handleClose = (event, reason) => {
     if (reason === 'clickaway') {
@@ -103,7 +111,7 @@ const UploadButton = forwardRef(function UploadButton(
       let items = await response.json();
       // console.log(items);
       if (items.status == 200) {
-        const dataUploaded = items.data.map((item) => ({ ...item, id: item.file_id }));
+        const dataUploaded = items.data.map((item) => ({ ...item, id: item.file_id, desc_file: t(item.desc_file) }));
         // console.log(dataUploaded);
         setFileStaged([...fileStaged, ...dataUploaded]);
         sendDataParent([...fileStaged, ...dataUploaded]);
@@ -129,7 +137,10 @@ const UploadButton = forwardRef(function UploadButton(
     <>
       <Stack spacing={2}>
         <Box style={{ display: 'flex', gap: 3, alignContent: 'center' }}>
-          <Typography sx={{ ml: 2, mb: 2, mt: 2 }}>Upload File Here</Typography>
+          <p style={{ margin: '0 0 0 0', color: 'red' }}>Maximal File Size : 10 Mb</p>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 3, alignContent: 'center' }}>
+          <p>{t('Attachment File Guide')} :</p>
           <Tooltip title={<h4>Attachment File Guide</h4>}>
             <IconButton color="primary" onClick={openFileGuide}>
               <Help fontSize="large" />
@@ -179,13 +190,6 @@ const UploadButton = forwardRef(function UploadButton(
             {statUpload.message}
           </Alert>
         </Snackbar>
-        {requiredFiles.length > 0 && (
-          <>
-            <p style={{ color: 'red' }}>
-              Files are required : {requiredFiles.map((item) => t(item.message)).join(', ')}
-            </p>
-          </>
-        )}
         <VenFileTable
           initData={fileStaged}
           upTable={handleUpFromTb}
@@ -194,6 +198,13 @@ const UploadButton = forwardRef(function UploadButton(
           delFile={deleteFile}
           t={t}
         />
+        {requiredFiles.length > 0 && (
+          <>
+            <p style={{ color: 'red' }}>
+              Files are required : {requiredFiles.map((item) => t(item.message)).join(', ')}
+            </p>
+          </>
+        )}
       </Stack>
     </>
   );

@@ -1,5 +1,5 @@
 import { DataGrid, GridActionsCellItem } from '@mui/x-data-grid';
-import { useState, forwardRef, useEffect } from 'react';
+import { useState, forwardRef, useEffect, useMemo } from 'react';
 import { Delete as DeleteIcon, Undo, Download, Preview } from '@mui/icons-material';
 import { Alert as MuiAlert, Snackbar, Backdrop, CircularProgress, Skeleton, Tooltip } from '@mui/material';
 import { styled, lighten, darken } from '@mui/material/styles';
@@ -19,8 +19,8 @@ export default function VenFileTable({ initData, upTable, isallow, isLoad, delFi
   const axiosPrivate = useAxiosPrivate();
 
   useEffect(() => {
-    setFile_ven(initData);
-  }, [initData]);
+    setFile_ven(initData.map((item) => ({ ...item, desc_file: props.t(item.desc_file) })));
+  }, [initData, props.t]);
 
   // console.log(file_ven);
   const DataGridFile = styled(DataGrid)(() => ({
@@ -119,108 +119,116 @@ export default function VenFileTable({ initData, upTable, isallow, isLoad, delFi
       // onDeleteSBar();
     };
 
-  const columns = [
-    {
-      field: 'desc_file',
-      type: 'string',
-      headerName: props.t('Type'),
-      width: 200,
-    },
-    { field: 'file_name', type: 'string', headerName: props.t('File Name'), width: 650 },
-    {
-      field: 'action',
-      type: 'actions',
-      headerName: props.t('Action'),
-      width: 100,
-      cellClassName: 'actions',
-      renderCell: (item) => {
-        const handleDownloadClick = async (item) => {
-          const fileName = item.row.file_name;
+  const columns = useMemo(
+    () => [
+      {
+        field: 'desc_file',
+        type: 'string',
+        headerName: props.t('Type'),
+        width: 200,
+      },
+      {
+        field: 'file_name',
+        type: 'string',
+        headerName: props.t('File Name'),
+        width: 650,
+      },
+      {
+        field: 'action',
+        type: 'actions',
+        headerName: props.t('Action'),
+        width: 100,
+        cellClassName: 'actions',
+        renderCell: (item) => {
+          const handleDownloadClick = async (item) => {
+            const fileName = item.row.file_name;
 
-          await axiosPrivate
-            .get(`/master/file/${fileName}`, { responseType: 'blob' })
-            .then((response) => {
-              fileDownload(response.data, fileName);
-              setFetchStat({
-                stat: 'success',
-                message: `file downloaded`,
+            await axiosPrivate
+              .get(`/master/file/${fileName}`, { responseType: 'blob' })
+              .then((response) => {
+                fileDownload(response.data, fileName);
+                setFetchStat({
+                  stat: 'success',
+                  message: `file downloaded`,
+                });
+                onDeleteSBar();
+              })
+              .catch((err) => {
+                console.log(err);
+                setFetchStat({
+                  stat: 'error',
+                  message: `error download file`,
+                });
+                onDeleteSBar();
               });
-              onDeleteSBar();
-            })
-            .catch((err) => {
-              console.log(err);
-              setFetchStat({
-                stat: 'error',
-                message: `error download file`,
-              });
-              onDeleteSBar();
-            });
-        };
-        const handlePreviewClick = (item) => {
-          const fileName = item.row.file_name;
-          window.open(`${process.env.REACT_APP_URL_BE}static/${fileName}`);
-        };
-        if (item.row.method == 'delete') {
-          return [
-            <GridActionsCellItem
-              key={`undo-${item.id}`}
-              icon={<Undo />}
-              label={props.t('Undo')}
-              onClick={handleUndoClick(item)}
-            />,
-          ];
-        } else {
-          if (isallow) {
+          };
+          const handlePreviewClick = (item) => {
+            const fileName = item.row.file_name;
+            window.open(`${process.env.REACT_APP_URL_BE}static/${fileName}`);
+          };
+          if (item.row.method == 'delete') {
             return [
-              <Tooltip title={props.t('Delete')} placement="top">
-                <GridActionsCellItem
-                  key={`delete-${item.id}`}
-                  icon={<DeleteIcon />}
-                  label={props.t('Delete')}
-                  onClick={() => handleDeleteClick(item.id)}
-                />
-              </Tooltip>,
-              <Tooltip title={props.t('Download')} placement="top">
-                <GridActionsCellItem
-                  key={`dwn-${item.id}`}
-                  icon={<Download />}
-                  label={props.t('Download')}
-                  onClick={() => handleDownloadClick(item)}
-                />
-              </Tooltip>,
-              <Tooltip title={props.t('Preview')} placement="top">
-                <GridActionsCellItem
-                  key={`prv-${item.id}`}
-                  icon={<Preview />}
-                  label={props.t('Preview')}
-                  onClick={() => handlePreviewClick(item)}
-                />
-              </Tooltip>,
+              <GridActionsCellItem
+                key={`undo-${item.id}`}
+                icon={<Undo />}
+                label={props.t('Undo')}
+                onClick={handleUndoClick(item)}
+              />,
             ];
           } else {
-            return [
-              <Tooltip title={props.t('Download')} placement="top">
-                <GridActionsCellItem
-                  key={`dwn-${item.id}`}
-                  icon={<Download />}
-                  label={props.t('Download')}
-                  onClick={() => handleDownloadClick(item)}
-                />
-              </Tooltip>,
-              <Tooltip title={props.t('Preview')} placement="top">
-                <GridActionsCellItem
-                  key={`prv-${item.id}`}
-                  icon={<Preview />}
-                  label={props.t('Preview')}
-                  onClick={() => handlePreviewClick(item)}
-                />
-              </Tooltip>,
-            ];
+            if (isallow) {
+              return [
+                <Tooltip title={props.t('Delete')} placement="top">
+                  <GridActionsCellItem
+                    key={`delete-${item.id}`}
+                    icon={<DeleteIcon />}
+                    label={props.t('Delete')}
+                    onClick={() => handleDeleteClick(item.id)}
+                  />
+                </Tooltip>,
+                <Tooltip title={props.t('Download')} placement="top">
+                  <GridActionsCellItem
+                    key={`dwn-${item.id}`}
+                    icon={<Download />}
+                    label={props.t('Download')}
+                    onClick={() => handleDownloadClick(item)}
+                  />
+                </Tooltip>,
+                <Tooltip title={props.t('Preview')} placement="top">
+                  <GridActionsCellItem
+                    key={`prv-${item.id}`}
+                    icon={<Preview />}
+                    label={props.t('Preview')}
+                    onClick={() => handlePreviewClick(item)}
+                  />
+                </Tooltip>,
+              ];
+            } else {
+              return [
+                <Tooltip title={props.t('Download')} placement="top">
+                  <GridActionsCellItem
+                    key={`dwn-${item.id}`}
+                    icon={<Download />}
+                    label={props.t('Download')}
+                    onClick={() => handleDownloadClick(item)}
+                  />
+                </Tooltip>,
+                <Tooltip title={props.t('Preview')} placement="top">
+                  <GridActionsCellItem
+                    key={`prv-${item.id}`}
+                    icon={<Preview />}
+                    label={props.t('Preview')}
+                    onClick={() => handlePreviewClick(item)}
+                  />
+                </Tooltip>,
+              ];
+            }
           }
-        }
+        },
       },
-    },
-  ];
+    ],
+    [props.t]
+  );
 
   return (
     <>

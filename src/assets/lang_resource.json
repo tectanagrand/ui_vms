@@ -63,7 +63,9 @@
       "You're about to send this form to CEO/CFO, are you sure": "Anda akan mengirim form ke CFO/CEO, anda yakin?",
       "Cancel": "Batal",
       "Vendor Details": "Detail Vendor",
-      "Justification Form": "Form Justifikasi"
+      "Justification Form": "Form Justifikasi",
+      "Company Profile": "Profil Perusahaan",
+      "Attachment File Guide": "Panduan pengunggahan file"
     }
   },
   "en": {
@@ -130,7 +132,9 @@
       "You're about to send this form to CEO/CFO, are you sure": "You're about to send this form to CEO/CFO, are you sure",
       "Cancel": "Cancel",
       "Vendor Details": "Vendor Details",
-      "Justification Form": "Justification Form"
+      "Justification Form": "Justification Form",
+      "Company Profile": "Company Profile",
+      "Attachment File Guide": "Attachment File Guide"
     }
   }
 }
