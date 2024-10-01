@@ -15,6 +15,7 @@ const SessionProvider = ({ children }) => {
     permission: JSON.parse(localStorage.getItem('permission')) ?? {},
     menu: JSON.parse(localStorage.getItem('menu')) ?? {},
     groupid: Cookies.get('groupid') ?? '',
+    is_reset_pwd: Cookies.get('is_reset_pwd') ?? '',
   });
 
   const setSession = useCallback((data) => {
@@ -27,6 +28,7 @@ const SessionProvider = ({ children }) => {
     Cookies.set('groupid', data.groupid);
     localStorage.setItem('permission', JSON.stringify(data.permission));
     localStorage.setItem('menu', JSON.stringify(data.menu));
+    Cookies.set('is_reset_pwd', data.is_reset_pwd);
     setSession_({
       fullname: data.fullname,
       username: data.username,
@@ -38,6 +40,7 @@ const SessionProvider = ({ children }) => {
       permission: data.permission,
       groupid: data.groupid,
       menu: data.menu,
+      is_reset_pwd: data.is_reset_pwd,
     });
   }, []);
 
@@ -52,6 +55,7 @@ const SessionProvider = ({ children }) => {
       permission: JSON.parse(localStorage.getItem('permission')),
       groupid: Cookies.get('groupid'),
       menu: JSON.parse(localStorage.getItem('menu')),
+      is_reset_pwd: Cookies.get('is_reset_pwd'),
     });
   }, []);
   const logOut = useCallback(() => {
@@ -64,6 +68,7 @@ const SessionProvider = ({ children }) => {
     Cookies.remove('accessToken');
     Cookies.remove('groupid');
     Cookies.remove('menu');
+    Cookies.remove('is_reset_pwd');
   }, []);
 
   const getPermission = useCallback((page) => {
@@ -96,6 +101,7 @@ const SessionProvider = ({ children }) => {
       Cookies.set('groupid', session.groupid);
       localStorage.setItem('permission', JSON.stringify(session.permission));
       localStorage.setItem('menu', JSON.stringify(session.menu));
+      Cookies.set('is_reset_pwd', session.is_reset_pwd);
     }
   }, [session]);
 

@@ -25,6 +25,7 @@ const ListTicket = lazy(() => import('src/pages/dashboard/ListTicket'));
 const ListVendor = lazy(() => import('src/pages/dashboard/ListVendor'));
 const ListReqStat = lazy(() => import('src/pages/dashboard/ListReqStat'));
 const VerifyVendor = lazy(() => import('src/pages/dashboard/VerifyVendor'));
+const VendorPage = lazy(() => import('src/pages/dashboard/VendorPage'));
 const FormUserPage = lazy(() => import('src/pages/FormUserPage'));
 const User = lazy(() => import('src/pages/dashboard/RefactorUser'));
 const MenuAccessPage = lazy(() => import('src/pages/MenuAccessPage'));
@@ -134,6 +135,10 @@ export const routes = createBrowserRouter([
       {
         path: 'vendorverif',
         element: <VerifyVendor />,
+      },
+      {
+        path: '',
+        element: <VendorPage />,
       },
     ],
   },

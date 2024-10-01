@@ -44,7 +44,11 @@ export default function LoginPage() {
         setSession(response);
         alert('Successfull login');
         setTimeout(() => {
-          navigate('/dashboard/ticket');
+          if (response.role !== 'VENDOR') {
+            navigate('/dashboard/ticket');
+          } else {
+            navigate('/dashboard');
+          }
         }, 1000);
         setBtnclicked(false);
       } catch (err) {
@@ -58,13 +62,13 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (Cookies.get('accessToken')) {
-      navigate('/dashboard/ticket');
+      if (Cookies.get('role') !== 'VENDOR') {
+        navigate('/dashboard/ticket');
+      } else {
+        navigate('/dashboard');
+      }
     }
   }, [navigate]);
-
-  if (Cookies.get('accessToken')) {
-    return <Navigate to="/dashboard/ticket" />;
-  }
 
   return (
     <>
