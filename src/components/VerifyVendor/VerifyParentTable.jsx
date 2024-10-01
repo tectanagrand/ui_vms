@@ -1,8 +1,5 @@
-import TableLayout from 'src/components/common/TableLayout';
-import { useState, useEffect, useReducer, useMemo, Fragment } from 'react';
+import { useState, Fragment } from 'react';
 import {
-  Box,
-  Button,
   Table,
   TableContainer,
   Typography,
@@ -13,46 +10,9 @@ import {
   TableBody,
   IconButton,
 } from '@mui/material';
-import { useNavigate } from 'react-router';
-import axios from 'axios';
-import useAxiosPrivate from 'src/hooks/useAxiosPrivate';
-import {
-  createColumnHelper,
-  flexRender,
-  getCoreRowModel,
-  getExpandedRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
+import { flexRender, getCoreRowModel, getExpandedRowModel, useReactTable } from '@tanstack/react-table';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
-
-const defaultData = [
-  {
-    ven_code: 'LN123456',
-    ven_name: 'PT. SARANA INDAH PERKASA',
-    city: 'SAMARINDA',
-  },
-  {
-    ven_code: 'LN123456',
-    ven_name: 'PT. SARANA INDAH PERKASA',
-    city: 'SAMARINDA',
-  },
-  {
-    ven_code: 'LN123456',
-    ven_name: 'PT. SARANA INDAH PERKASA',
-    city: 'SAMARINDA',
-  },
-  {
-    ven_code: 'LN123456',
-    ven_name: 'PT. SARANA INDAH PERKASA',
-    city: 'SAMARINDA',
-  },
-  {
-    ven_code: 'LN123456',
-    ven_name: 'PT. SARANA INDAH PERKASA',
-    city: 'SAMARINDA',
-  },
-];
 
 const columns = [
   {
@@ -110,7 +70,7 @@ const childTable = ({ row }) => {
 };
 
 export default function VerifyVendor() {
-  const [data, _setData] = useState(() => [...defaultData]);
+  const [data, _setData] = useState();
   const [expand, setExpand] = useState({});
 
   const table = useReactTable({
