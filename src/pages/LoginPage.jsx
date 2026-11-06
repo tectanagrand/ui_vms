@@ -12,6 +12,7 @@ import useAccessTokStore from "src/store/useAccessTokStore";
 import useCheckResetPWD from "src/store/useCheckResetPWD";
 import usePermissionStore from "src/store/userPermissionStore";
 import useMenuStore from "src/store/useMenuStore";
+import { resolveLandingRouteForSession } from "src/helper/landingRoute";
 import CircularProgress from "@mui/material/CircularProgress";
 import SvgIcon from "@mui/material/SvgIcon";
 import { PasswordWithEyes } from "src/components/common/PasswordWithEyes";
@@ -19,6 +20,39 @@ import imgbg from "../images/gama-tower.jpg";
 import KpnNav from "../images/kpn-logo.svg?react";
 import { LoadingButton } from "@mui/lab";
 // import Cookies from 'js-cookie';
+
+function getLoginErrorMessage(error, apiBaseUrl = "") {
+  const response = error?.response;
+  const data = response?.data;
+  const message = data?.message;
+
+  if (typeof message === "string" && message.trim()) {
+    return message;
+  }
+
+  if (typeof data === "string") {
+    const trimmed = data.trim().toLowerCase();
+    if (trimmed.startsWith("<!doctype html") || trimmed.startsWith("<html")) {
+      const baseUrlInfo = apiBaseUrl ? ` (${apiBaseUrl})` : "";
+      return `Login API mengembalikan HTML, bukan JSON${baseUrlInfo}. Periksa VITE_URL_LOC dan pastikan backend API yang aktif.`;
+    }
+  }
+
+  if (response?.status === 404) {
+    const baseUrlInfo = apiBaseUrl ? ` (${apiBaseUrl})` : "";
+    return `Endpoint login tidak ditemukan${baseUrlInfo}. Periksa VITE_URL_LOC dan pastikan backend berjalan di URL tersebut.`;
+  }
+
+  if (typeof response?.statusText === "string" && response.statusText.trim()) {
+    return response.statusText;
+  }
+
+  if (typeof error?.message === "string" && error.message.trim()) {
+    return error.message;
+  }
+
+  return "Login gagal. Periksa koneksi backend dan konfigurasi API.";
+}
 
 const defaultValue = {
   Username: "",
@@ -44,13 +78,13 @@ export default function LoginPage() {
       navigate(`/frm/newform/${data.FormToken}`);
     } else {
       try {
-        const logindata = await axios.post(`${import.meta.env.VITE_URL_LOC}/user/login`, {
+        const apiBaseUrl = import.meta.env.VITE_URL_LOC;
+        const logindata = await axios.post(`${apiBaseUrl}/user/login`, {
           username: data.Username,
           password: data.Password,
         });
         const response = logindata.data;
         // setSession(response);
-        // console.log(response);
         setSessionStore({
           fullname: response.fullname,
           username: response.username,
@@ -61,32 +95,35 @@ export default function LoginPage() {
           email: response.email,
           role: response.role,
           groupid: response.groupid,
+          // Login already resolved Master Data membership from the same group
+          // names /user/getsess uses, so seed it here too: the dashboard's own
+          // getsess would otherwise be the first thing to set it, leaving a real
+          // MDM user without the Pickup button and the assignment filters for
+          // the frame or two it takes to land.
+          is_mdm_material: response.user_group?.is_mdm_material,
+          is_material_admin: response.is_material_admin,
         });
         setMenu(response.menu);
         setPermission(response.permission);
         setAccessToken(response.accessToken);
         setIsResetPWD(response.is_reset_pwd);
         alert("Successfull login");
-        console.log(response);
         setTimeout(() => {
-          if (response.dept_id == "MDM_MAT" || response.dept_id == "MATERIAL") {
-            navigate("/dashboard/materials/lookup");
-          } else if (response.dept_id !== "VENDOR") {
-            navigate("/dashboard/ticket");
-          } else {
-            navigate("/dashboard");
-          }
+          // Permission picks the landing page, not the department. Aiming every
+          // non-vendor department at the ticket list dropped users whose sidebar
+          // has no ticket list on it — a materials requester with no dept_id, for
+          // one. The department only expresses a preference now, and it is
+          // honoured solely when the user can actually reach it. /dashboard is
+          // the fallback: its index resolves the same route once the session has
+          // loaded, and reports the empty case when there is nothing to reach.
+          navigate(resolveLandingRouteForSession(response) ?? "/dashboard");
         }, 1000);
         setBtnclicked(false);
       } catch (err) {
         setOpenload(false);
         setBtnclicked(false);
         console.log(err);
-        if (!err.response) {
-          alert(err.message);
-        } else {
-          alert(err.response?.data?.message);
-        }
+        alert(getLoginErrorMessage(err, import.meta.env.VITE_URL_LOC));
       }
     }
   };
@@ -120,6 +157,7 @@ export default function LoginPage() {
             sx={{
               display: "flex",
               width: matches ? "18.75rem" : "37.5rem",
+              maxWidth: "calc(100vw - 32px)",
               height: matches ? "37.5rem" : "18.75rem",
               p: 3,
               flexDirection: "column",
@@ -177,7 +215,7 @@ export default function LoginPage() {
                 justifyContent: "flex-end",
                 alignItems: "center",
                 height: matches ? "3.125rem" : "6.25rem",
-                width: matches ? "18.75rem" : "37.5rem",
+                width: "100%",
               }}
             >
               <Link

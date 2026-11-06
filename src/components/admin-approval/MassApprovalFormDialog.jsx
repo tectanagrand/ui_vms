@@ -1,0 +1,2513 @@
+import {
+  AttachFile,
+  Cancel,
+  CheckCircle,
+  Close,
+  Delete,
+  Replay,
+  WarningAmber,
+} from "@mui/icons-material";
+import {
+  Alert,
+  Box,
+  Button,
+  Checkbox,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  IconButton,
+  Paper,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TextField,
+  Tooltip,
+  Typography,
+} from "@mui/material";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ATTACHMENT_SIZE_LIMIT_TEXT,
+  ATTACHMENT_SUPPORTED_FORMATS_TEXT,
+  getAttachmentValidationError,
+  MAX_ATTACHMENTS,
+  normalizeAttachmentSelection,
+} from "src/components/request-material/attachmentValidation.js";
+import AttachmentPreviewDialog, {
+  buildAttachmentUrl,
+} from "src/components/common/AttachmentPreviewDialog";
+import TableLoadingRows from "src/components/common/TableLoadingRows";
+import { buildMassApprovalDetail } from "src/helper/massApprovalDetail.js";
+import {
+  buildMassGroupNameMap,
+  joinMassItemDescription,
+  MASS_FINAL_CODE_SUFFIX_HELPER_TEXT,
+  MASS_FINAL_CODE_SUFFIX_LENGTH,
+  resolveMassGroupLabel,
+  sanitizeMassFinalCodeSuffix,
+  splitMassGroupLabel,
+  validateMassFinalCodeSuffixes,
+} from "src/helper/massFinalCode.js";
+import {
+  getSapStatusChip,
+  getStagedMaterialCode,
+  isSapError,
+} from "src/helper/sapStatus.js";
+import { isMdmMaterialUser } from "src/helper/adminApprovalView.js";
+import { normalizeMassMaterialFieldValue } from "src/components/request-material/massMaterialFormValidation.js";
+import {
+  applyMassDecision,
+  buildMassDecideRequestBody,
+  describeMassItemState,
+  formatMassDecisionSummary,
+  formatMassItemNos,
+  isMassItemActionable,
+  MASS_DECISION_ACTIONS,
+  MASS_DECISION_APPROVE,
+  MASS_DECISION_LABELS,
+  MASS_DECISION_REJECT,
+  MASS_DECISION_REWORK,
+  resolveMassItemStateStyle,
+  summarizeMassDecisions,
+} from "src/helper/massItemDecisions.js";
+import {
+  applyOptimisticMdmClaim,
+  buildClaimMdmPath,
+  evaluateMdmClaimGate,
+  extractClaimedApprovalSteps,
+  identifiersMatch,
+  MDM_GRAB_BUTTON_BUSY_LABEL,
+  MDM_GRAB_BUTTON_LABEL,
+  MDM_STEP_KIND,
+  resolveMdmClaimErrorMessage,
+  resolveStepApproverUserId,
+} from "src/helper/mdmClaimGate.js";
+import useAxiosPrivate from "src/hooks/useAxiosPrivate";
+import useInputDraft from "src/hooks/useInputDraft";
+import useSessionStore from "src/store/useSessionStore";
+import {
+  buildReworkDestinationPayload,
+  buildReworkDestinationSlots,
+  describeReworkDestination,
+  NOTIFY_VIA_APP,
+  NOTIFY_VIA_EMAIL,
+  resolveReworkRequester,
+  REWORK_TO_NEW_APPROVER,
+  REWORK_TO_REQUESTER,
+  validateReworkDestination,
+} from "src/helper/adminApprovalRework.js";
+import {
+  buildReworkEmailPayload,
+  deriveReworkEmailReason,
+  hasReworkEmailContentError,
+  REWORK_EMAIL_KIND_MASS,
+  REWORK_EMAIL_REASON_NOTICE,
+  validateReworkEmailContent,
+} from "src/helper/reworkEmailThread.js";
+import MaterialAiMatchPanel from "src/components/common/MaterialAiMatchPanel";
+import ReworkDestinationField from "./ReworkDestinationField";
+import ReworkEmailThreadSection from "./ReworkEmailThreadSection";
+
+const EDITABLE_FIELD_META = [
+  { key: "plantCode", label: "Plant", dbKey: "plant_code", required: true },
+  { key: "slocCode", label: "Sloc", dbKey: "sloc_code", required: true },
+  { key: "materialGroup", label: "Mat Group", dbKey: "material_group", required: true },
+  { key: "materialSubGroup", label: "Sub Mat Group", dbKey: "material_sub_group", required: true },
+  { key: "materialDescription", label: "Description", dbKey: "material_description", required: true },
+  { key: "poText", label: "PO Text", dbKey: "po_text", required: false },
+  { key: "uom", label: "UoM", dbKey: "base_uom", required: true },
+  { key: "spesifikasiTambahan", label: "Spesifikasi Tambahan", dbKey: "spesifikasi_tambahan", required: false },
+];
+const REQUIRED_FIELD_KEYS = EDITABLE_FIELD_META.filter(m => m.required).map(m => m.key);
+
+// The Master Data stage's one submit for the whole batch: every item waiting
+// there carries its own decision (see massItemDecisions.js).
+const DECIDE_ACTION = "Decide";
+
+const DECISION_STYLES = {
+  [MASS_DECISION_APPROVE]: { bgcolor: "#0b35d9", color: "common.white" },
+  [MASS_DECISION_REWORK]: { bgcolor: "#9c27b0", color: "common.white" },
+  [MASS_DECISION_REJECT]: { bgcolor: "#c62828", color: "common.white" },
+};
+
+const DECISION_REMARK_REQUIRED = {
+  [MASS_DECISION_APPROVE]: "Approve remark is required.",
+  [MASS_DECISION_REWORK]: "Rework reason is required.",
+  [MASS_DECISION_REJECT]: "Reject reason is required.",
+};
+
+const EMPTY_DECISION_REMARKS = {
+  [MASS_DECISION_APPROVE]: "",
+  [MASS_DECISION_REWORK]: "",
+  [MASS_DECISION_REJECT]: "",
+};
+
+// Header line of each step of the per-item decision wizard: where Master Data
+// is in it, and which items this step's action covers.
+function DecisionStepCaption({ index, total, action, itemNos }) {
+  return (
+    <Stack direction="row" spacing={1} alignItems="center" justifyContent="center">
+      <Typography variant="caption" sx={{ fontWeight: 800, color: "text.secondary" }}>
+        Step {index + 1} of {total}
+      </Typography>
+      <Chip
+        label={MASS_DECISION_LABELS[action]}
+        size="small"
+        sx={{ fontWeight: 800, ...DECISION_STYLES[action] }}
+      />
+      <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+        {formatMassItemNos(itemNos)}
+      </Typography>
+    </Stack>
+  );
+}
+
+// Columns of the Final Code (running number) table, in order. Kept as data so
+// the header row is one centred cell definition rather than five hand-aligned
+// copies that drift apart.
+const FINAL_CODE_COLUMNS = [
+  { label: "#", width: 56 },
+  { label: "Description & PO Text" },
+  { label: "Material Group", width: 180 },
+  { label: "Sub Material Group", width: 180 },
+  { label: "Running Number", width: 150 },
+];
+
+// Keep keystroke renders inside this field rather than the entire batch table.
+// The parent retains the latest suffix for validation and submission.
+function RunningNumberField({ initialValue, onChange, ...props }) {
+  const [value, setValue] = useState(initialValue);
+
+  return (
+    <TextField
+      {...props}
+      value={value}
+      onChange={event => {
+        const suffix = sanitizeMassFinalCodeSuffix(event.target.value);
+        setValue(suffix);
+        onChange(suffix);
+      }}
+    />
+  );
+}
+
+// Per-item SAP staging status, same chips the single request shows in the
+// approval list — plus the SAP write-back message on hover when it errored.
+function ItemSapStatus({ item }) {
+  const sapChip = getSapStatusChip(item?.sapPushStatus);
+
+  if (!sapChip) {
+    return (
+      <Typography variant="caption" color="text.secondary">
+        -
+      </Typography>
+    );
+  }
+
+  const chip = (
+    <Chip
+      label={sapChip.label}
+      size="small"
+      sx={{ fontWeight: 800, bgcolor: sapChip.bgcolor, color: sapChip.color }}
+    />
+  );
+
+  if (isSapError(item?.sapPushStatus) && item?.sapErrorMsg) {
+    return (
+      <Tooltip title={item.sapErrorMsg} arrow placement="top">
+        <Stack spacing={0.5} alignItems="flex-start" sx={{ maxWidth: 200 }}>
+          {chip}
+          <Typography
+            variant="caption"
+            sx={{
+              color: "#dc2626",
+              fontWeight: 600,
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+            }}
+          >
+            {item.sapErrorMsg}
+          </Typography>
+        </Stack>
+      </Tooltip>
+    );
+  }
+
+  return chip;
+}
+
+// Seeds the per-item attachment state from the items the dialog was opened
+// with — one entry per item, each existing attachment flagged so the staged
+// list can tell a kept file apart from one just picked.
+function buildInitialItemAttachments(items = []) {
+  const initial = {};
+  (items || []).forEach(item => {
+    initial[item.itemNo] = (item.attachments || []).map(attachment => ({
+      ...attachment,
+      existing: true,
+    }));
+  });
+  return initial;
+}
+
+export default function MassApprovalFormDialog({
+  open,
+  row,
+  items = [],
+  // True while the page is still fetching this batch's items — the dialog is
+  // opened first and the items arrive after, so the table needs to say so
+  // instead of claiming the batch is empty.
+  itemsLoading = false,
+  onClose,
+  onAction,
+  onGrabbed,
+  submitting = false,
+  serverValidationErrors = {},
+}) {
+  const detail = useMemo(
+    () => buildMassApprovalDetail(row || {}, items),
+    [row, items]
+  );
+
+  // Per-item draft values – keyed by itemNo, contains only changed fields
+  const [itemDrafts, setItemDrafts] = useState({});
+  // Staged attachment changes, keyed by itemNo — { id, name, path, type,
+  // existing }[] for kept/existing files, plain File objects for new ones.
+  // An attachment row is stored against the item, not the batch, so each row
+  // carries its own list and its own MAX_ATTACHMENTS limit. Only sent to the
+  // server with Approve/Rework; see buildItemAttachmentChanges.
+  const [itemAttachments, setItemAttachments] = useState({});
+  const [itemAttachmentErrors, setItemAttachmentErrors] = useState({});
+  const [activeAttachmentItemNo, setActiveAttachmentItemNo] = useState(null);
+  const attachmentInputRef = useRef(null);
+  // File preview modal, mirroring the single request dialog so an approver or
+  // Master Data can open each item's attachment without leaving the batch.
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewFile, setPreviewFile] = useState(null);
+  // Remark dialog state
+  const [remarkDialogOpen, setRemarkDialogOpen] = useState(false);
+  const [currentAction, setCurrentAction] = useState("");
+  const [remarkText, setRemarkText, remarkInputKey] = useInputDraft("");
+  const [remarkError, setRemarkError] = useState("");
+  // Rework destination — Master Data only; see the Rework To field below.
+  const [reworkTarget, setReworkTarget] = useState(REWORK_TO_REQUESTER);
+  const [reworkNewApprover, setReworkNewApprover] = useState(null);
+  const [reworkNotifyVia, setReworkNotifyVia] = useState(NOTIFY_VIA_APP);
+  // The mail itself, once the EMAIL channel is chosen. Kept here rather than in
+  // the field so toggling back to "Via aplikasi" and out again does not discard
+  // what Master Data has already typed.
+  const [reworkEmailSubject, setReworkEmailSubject, emailSubjectInputKey, refreshEmailReason] = useInputDraft("");
+  const [reworkEmailBody, setReworkEmailBody, emailBodyInputKey] = useInputDraft("");
+  const [reworkEmailErrors, setReworkEmailErrors] = useState({ subject: "", body: "" });
+  // Running numbers entered at the Master Data stage — one per item, typed in
+  // one by one, keyed by item id. See the Final Code dialog below.
+  const [finalCodeDialogOpen, setFinalCodeDialogOpen] = useState(false);
+  const [finalCodeSuffixes, setFinalCodeSuffixes, finalCodeInputKey] = useInputDraft({});
+  const [finalCodeSuffixErrors, setFinalCodeSuffixErrors] = useState({});
+  // Server-side rejection of the composed plan (duplicate code, unresolved
+  // group, …) — not tied to one item's box, shown as a banner instead.
+  const [finalCodeGeneralError, setFinalCodeGeneralError] = useState("");
+  // Group / sub group names for the running-number table's captions, keyed by
+  // code. Mass items store the bare code, so the names have to be looked up —
+  // see resolveMassGroupLabel. Empty maps simply mean no caption yet.
+  const [groupNameMap, setGroupNameMap] = useState(() => new Map());
+  const [subGroupNameMap, setSubGroupNameMap] = useState(() => new Map());
+  // Holds the freshly-claimed approval steps returned by the claim-mdm endpoint
+  // so the dialog reflects the grab without waiting for a parent refresh.
+  const [claimedSteps, setClaimedSteps] = useState(null);
+  const [grabbing, setGrabbing] = useState(false);
+  const [grabError, setGrabError] = useState("");
+  // Master Data's per-item decisions: the action picked for each item id, the
+  // items currently ticked, and one remark per action for the confirm step.
+  const [itemDecisions, setItemDecisions] = useState({});
+  const [selectedItemIds, setSelectedItemIds] = useState([]);
+  const [decisionError, setDecisionError] = useState("");
+  const [decisionRemarks, setDecisionRemarks, decisionRemarkInputKey] = useInputDraft(EMPTY_DECISION_REMARKS);
+  const [decisionRemarkErrors, setDecisionRemarkErrors] = useState({});
+  // The wizard step on screen (one of MASS_DECISION_ACTIONS), null when closed.
+  const [decisionStep, setDecisionStep] = useState(null);
+  const axiosPrivate = useAxiosPrivate();
+
+  // Reset state when dialog opens/closes
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  useEffect(() => {
+    if (!open) {
+      setItemDrafts({});
+      setFieldErrors({});
+      setRemarkDialogOpen(false);
+      setCurrentAction("");
+      setRemarkText("");
+      setRemarkError("");
+      setReworkTarget(REWORK_TO_REQUESTER);
+      setReworkNewApprover(null);
+      setReworkNotifyVia(NOTIFY_VIA_APP);
+      setReworkEmailSubject("");
+      setReworkEmailBody("");
+      setReworkEmailErrors({ subject: "", body: "" });
+      setFinalCodeDialogOpen(false);
+      setFinalCodeSuffixes({});
+      setFinalCodeSuffixErrors({});
+      setFinalCodeGeneralError("");
+      setGroupNameMap(new Map());
+      setSubGroupNameMap(new Map());
+      setClaimedSteps(null);
+      setGrabbing(false);
+      setGrabError("");
+      setItemDecisions({});
+      setSelectedItemIds([]);
+      setDecisionError("");
+      setDecisionRemarks(EMPTY_DECISION_REMARKS);
+      setDecisionRemarkErrors({});
+      setDecisionStep(null);
+      // Discards staged attachment changes for every item — an abandoned
+      // review must leave no trace, same as itemDrafts above.
+      setItemAttachments(buildInitialItemAttachments(detail.items));
+      setItemAttachmentErrors({});
+      setActiveAttachmentItemNo(null);
+      setPreviewOpen(false);
+      setPreviewFile(null);
+    }
+  }, [open, detail]);
+
+  // Items arrive after the dialog opens (fetched separately) — (re)seed the
+  // per-item attachment state once they land, or when a different batch's
+  // items replace them. Keyed on `detail` rather than the raw `items` prop
+  // because that is what the body actually reads, and detail is memoised on
+  // both row and items.
+  useEffect(() => {
+    setItemAttachments(buildInitialItemAttachments(detail.items));
+    setItemAttachmentErrors({});
+  }, [detail]);
+
+  // A different batch is a different claim: whatever the last grab returned says
+  // nothing about this one.
+  useEffect(() => {
+    setClaimedSteps(null);
+    setGrabError("");
+  }, [row]);
+
+  // Gated on the item this viewer sees the batch through, not the batch status:
+  // a "Partial" batch can still hold items waiting on this viewer.
+  const normalizedStatus = String(detail.itemStatus || "").trim().toUpperCase();
+  const currentUserId = useSessionStore(state => state.user_id);
+  const currentUsername = useSessionStore(state => state.username);
+  const isMaterialAdmin = useSessionStore(state => state.is_material_admin);
+  const isMdmUser = useSessionStore(isMdmMaterialUser);
+  const canSubmitApprovalAction = normalizedStatus === "SUBMIT";
+  // The batch's steps as currently known: prefer the ones a fresh grab returned,
+  // otherwise whatever the row was opened with. This is what lets the dialog go
+  // from claimable to claimed without being reopened.
+  const approvalSteps = useMemo(() => {
+    if (Array.isArray(claimedSteps) && claimedSteps.length > 0) {
+      return claimedSteps;
+    }
+    return Array.isArray(row?.approvalSteps) ? row.approvalSteps : [];
+  }, [claimedSteps, row]);
+  // It is this user's turn only when they are the ACTIVE step's assigned
+  // approver (or MDM claimer). ADMIN keeps its backend-side override. Everyone
+  // else — including approvers who already acted — gets a view-only dialog.
+  const activeStep = useMemo(
+    () =>
+      approvalSteps.find(
+        step => step.status !== "APPROVED" && step.status !== "REJECTED"
+      ) || null,
+    [approvalSteps]
+  );
+  // ADMIN, or a MATERIAL_ADMIN group member: the backend decides and grants
+  // the same override server-side.
+  const isAdminOverride = isMaterialAdmin;
+  const activeApproverUserId = resolveStepApproverUserId(activeStep);
+
+  // Master Data is the only stage that gets to choose where a rework lands, and
+  // the only one that is claimed rather than assigned. Mass requests have no
+  // rewind support, so the real steps below render for context only — the
+  // requester and the one fillable slot are the destinations.
+  const isMdmStageActive =
+    String(activeStep?.kind ?? row?.currentStageKind ?? "")
+      .trim()
+      .toUpperCase() === MDM_STEP_KIND;
+  // Same rules the single-request dialog grabs by — they live in one helper so
+  // the two dialogs cannot drift apart. The backend enforces them again.
+  const { canGrabMdm, isMdmClaimedByMe, claimNotice } = evaluateMdmClaimGate({
+    approvalSteps,
+    isMdmStageActive,
+    mdmApproverUserId: activeApproverUserId,
+    currentUserId,
+    isMdmUser,
+    canSubmitApprovalAction,
+  });
+  const isMyManualTurn =
+    activeStep != null &&
+    String(activeStep.kind || "").trim().toUpperCase() !== MDM_STEP_KIND &&
+    identifiersMatch(activeApproverUserId, currentUserId);
+  // Before the Master Data step is grabbed nobody may act on it — not even the
+  // MDM user about to grab it — so Approve/Rework/Reject stay disabled until the
+  // claim lands, exactly as they do on a single request.
+  const canAct =
+    canSubmitApprovalAction &&
+    (isAdminOverride || isMyManualTurn || (isMdmStageActive && isMdmClaimedByMe));
+
+  // The items an action here moves: those waiting at the same step as the one
+  // this viewer acts on. The rest of the batch (done, cancelled, back with the
+  // requester, or on somebody else's step) is shown read-only.
+  const actionableItems = useMemo(
+    () => (canAct ? detail.items.filter(item => isMassItemActionable(item, activeStep)) : []),
+    [canAct, detail.items, activeStep]
+  );
+  const actionableItemIds = useMemo(
+    () => new Set(actionableItems.map(item => String(item.id))),
+    [actionableItems]
+  );
+  const isItemEditable = item => actionableItemIds.has(String(item?.id));
+  // Master Data decides every item on its own and submits them together.
+  const isDecideMode = canAct && isMdmStageActive;
+  const decisionSummary = useMemo(
+    () => summarizeMassDecisions(itemDecisions, actionableItems),
+    [itemDecisions, actionableItems]
+  );
+  const showItemStateColumn =
+    isDecideMode || new Set(detail.items.map(describeMassItemState)).size > 1;
+  const selectableItemIds = actionableItems.map(item => String(item.id));
+  const selectedCount = selectedItemIds.length;
+  const allSelected =
+    selectableItemIds.length > 0 && selectedCount === selectableItemIds.length;
+  // Approve and Rework carry staged attachment changes; field edits only
+  // travel with Approve — the same rules the whole-batch actions follow.
+  const decisionApproveIds = useMemo(
+    () => new Set(decisionSummary.itemIdsByAction[MASS_DECISION_APPROVE].map(String)),
+    [decisionSummary]
+  );
+  const decisionAttachableIds = useMemo(
+    () =>
+      new Set([
+        ...decisionSummary.itemIdsByAction[MASS_DECISION_APPROVE].map(String),
+        ...decisionSummary.itemIdsByAction[MASS_DECISION_REWORK].map(String),
+      ]),
+    [decisionSummary]
+  );
+  const finalCodeItems = isDecideMode
+    ? detail.items.filter(item => decisionApproveIds.has(String(item.id)))
+    : actionableItems;
+  // The decision wizard: one step per action Master Data picked, in a fixed
+  // order — Approve (running numbers + remark, in the Final Code dialog), then
+  // Rework, then Reject. The last step submits the whole batch.
+  const decisionSteps = MASS_DECISION_ACTIONS.filter(
+    action => decisionSummary.counts[action] > 0
+  );
+  const decisionStepIndex = decisionSteps.indexOf(decisionStep);
+  const isLastDecisionStep = decisionStepIndex === decisionSteps.length - 1;
+  const isFinalCodeOpen =
+    finalCodeDialogOpen || decisionStep === MASS_DECISION_APPROVE;
+
+  const handleGrabMdm = async () => {
+    const claimPath = buildClaimMdmPath({
+      requestId: row?.id,
+      isMassRequest: true,
+    });
+
+    if (!claimPath || grabbing) {
+      return;
+    }
+
+    setGrabbing(true);
+    setGrabError("");
+
+    try {
+      const response = await axiosPrivate.post(claimPath);
+      const nextSteps = extractClaimedApprovalSteps(response.data);
+      setClaimedSteps(
+        nextSteps ||
+          // No steps echoed back: optimistically mark this user as the claimer.
+          applyOptimisticMdmClaim({
+            approvalSteps,
+            currentStageLevel: activeStep?.level ?? row?.currentStageLevel ?? null,
+            userId: currentUserId,
+          })
+      );
+      // Notify the parent so the main inbox table reflects the claim — the batch
+      // should no longer show as "unclaimed" to this (or any) MDM user.
+      onGrabbed?.();
+    } catch (error) {
+      setGrabError(resolveMdmClaimErrorMessage(error));
+    } finally {
+      setGrabbing(false);
+    }
+  };
+
+  const canChooseReworkTarget =
+    isMdmStageActive &&
+    (currentAction === "Rework" ||
+      (currentAction === DECIDE_ACTION &&
+        decisionSummary.counts[MASS_DECISION_REWORK] > 0));
+  const reworkRequester = useMemo(() => resolveReworkRequester(row || {}), [row]);
+  const reworkSlots = useMemo(
+    () =>
+      buildReworkDestinationSlots({
+        approvalSteps: row?.approvalSteps,
+        requesterLabel: reworkRequester.label,
+        newApprover: reworkNewApprover,
+        allowStepRewind: false,
+      }),
+    [row?.approvalSteps, reworkRequester.label, reworkNewApprover]
+  );
+  const reworkExcludedIdentifiers = useMemo(
+    () => [...reworkRequester.identifiers, currentUserId, currentUsername],
+    [reworkRequester.identifiers, currentUserId, currentUsername]
+  );
+  const reworkDestinationError = canChooseReworkTarget
+    ? validateReworkDestination({
+        selectedValue: reworkTarget,
+        newApprover: reworkNewApprover,
+        requesterIdentifiers: reworkRequester.identifiers,
+        actorIdentifiers: [currentUserId, currentUsername],
+      })
+    : "";
+  // A mail is only in play on the hand-picked-approver row; every other
+  // destination notifies in-app, so its draft is neither shown nor validated.
+  const reworkEmailChannel =
+    canChooseReworkTarget && reworkTarget === REWORK_TO_NEW_APPROVER
+      ? reworkNotifyVia
+      : NOTIFY_VIA_APP;
+  // On the EMAIL channel the mail is the message, so the reason box gives way to
+  // the subject the approver reads first rather than asking Master Data to word
+  // the same thing twice. A reason still travels — the endpoint requires one and
+  // the in-app history shows it — it is just derived from the subject.
+  const isReworkEmailReason = reworkEmailChannel === NOTIFY_VIA_EMAIL;
+  const reworkEmailReason = isReworkEmailReason
+    ? deriveReworkEmailReason(reworkEmailSubject.current)
+    : "";
+
+  // Fills only what is still empty: the decision wizard remounts the rework
+  // field when Master Data steps Back and forward again, which re-fetches the
+  // draft, and that must not overwrite a mail they already edited. Every
+  // rework clears both fields before it opens, so a first load fills both.
+  const handleReworkEmailTemplateLoaded = useCallback(template => {
+    setReworkEmailSubject(prev => prev || template.subject);
+    setReworkEmailBody(prev => prev || template.body);
+  }, []);
+
+  const handleReworkEmailSubjectChange = value => {
+    reworkEmailSubject.current = value;
+    setReworkEmailErrors(prev => (prev.subject ? { ...prev, subject: "" } : prev));
+  };
+
+  const handleReworkEmailBodyChange = value => {
+    reworkEmailBody.current = value;
+    setReworkEmailErrors(prev => (prev.body ? { ...prev, body: "" } : prev));
+  };
+
+  // The SAP columns only mean something once the batch has been staged, so they
+  // stay out of the (already wide) item table while it is still in approval.
+  const hasSapColumns = useMemo(
+    () => detail.items.some(item => item.finalCode || item.sapPushStatus),
+    [detail.items]
+  );
+  // Item no + request no, one column per editable field, the attachments
+  // column, the two SAP columns when they are showing, and the selection +
+  // decision/status columns when those are. Shared by the loading and empty
+  // rows so neither can drift out of step with the header.
+  const itemColumnCount =
+    3 +
+    EDITABLE_FIELD_META.length +
+    (hasSapColumns ? 2 : 0) +
+    (isDecideMode ? 1 : 0) +
+    (showItemStateColumn ? 1 : 0);
+
+  // Server-side rejection of the composed plan (invalid entry, duplicate code,
+  // or one already taken): reopen the Final Code dialog with the server
+  // message shown as a banner so Master Data can fix the offending item.
+  useEffect(() => {
+    const serverError = serverValidationErrors?.finalCodeSuffix;
+    if (serverError?.message) {
+      setRemarkDialogOpen(false);
+      setFinalCodeGeneralError(serverError.message);
+      // Within the decision wizard the running numbers are its Approve step.
+      if (currentAction === DECIDE_ACTION) {
+        setDecisionStep(MASS_DECISION_APPROVE);
+      } else {
+        setFinalCodeDialogOpen(true);
+      }
+    }
+  }, [serverValidationErrors]);
+
+  // Resolve a field's display value: draft overrides original item value
+  const resolveField = useCallback(
+    (item, fieldKey) => {
+      const draft = itemDrafts[item.itemNo];
+      if (draft && draft[fieldKey] !== undefined) {
+        return draft[fieldKey];
+      }
+      return item[fieldKey] ?? "";
+    },
+    [itemDrafts]
+  );
+
+  // Distinct material group codes in this batch, as a sorted string. The codes
+  // are read through resolveField so a group edited in the items table above is
+  // the one looked up, but the *key* only changes when a group actually
+  // changes — an unrelated draft edit must not refire the requests below.
+  const finalCodeGroupCodesKey = useMemo(() => {
+    const codes = new Set();
+
+    for (const item of detail.items) {
+      const { code } = splitMassGroupLabel(resolveField(item, "materialGroup"));
+      if (code) {
+        codes.add(code.toUpperCase());
+      }
+    }
+
+    return [...codes].sort().join(",");
+  }, [detail.items, resolveField]);
+
+  // Group / sub group names for the running-number captions, fetched only once
+  // the Final Code dialog is actually opened — every approver stage renders this
+  // component, but only Master Data ever reaches that step.
+  //
+  // Cost: one dropdown request plus one form-schema request per DISTINCT group
+  // in the batch. A batch normally spans one or two groups, so this stays a
+  // couple of requests no matter how many items it carries.
+  useEffect(() => {
+    if (!isFinalCodeOpen) {
+      return undefined;
+    }
+
+    let active = true;
+    const groupCodes = finalCodeGroupCodesKey ? finalCodeGroupCodesKey.split(",") : [];
+
+    const loadGroupNames = async () => {
+      const [groupsResult, ...schemaResults] = await Promise.allSettled([
+        axiosPrivate.get("/material/groups/dropdown"),
+        ...groupCodes.map(code =>
+          axiosPrivate.get(`/material/groups/${encodeURIComponent(code)}/form-schema`)
+        ),
+      ]);
+
+      if (!active) {
+        return;
+      }
+
+      // A caption is decoration: when a lookup fails the cell still shows its
+      // code, so a failed request must never block running-number entry. Logged
+      // rather than surfaced for the same reason.
+      if (groupsResult.status === "fulfilled") {
+        const groups = groupsResult.value?.data?.data;
+        setGroupNameMap(buildMassGroupNameMap(groups));
+      } else {
+        console.error("Failed to load material group names:", groupsResult.reason);
+      }
+
+      const subgroups = schemaResults.flatMap(result => {
+        if (result.status !== "fulfilled") {
+          console.error("Failed to load sub group names:", result.reason);
+          return [];
+        }
+        const payload = result.value?.data?.data?.subgroups;
+        return Array.isArray(payload) ? payload : [];
+      });
+
+      setSubGroupNameMap(buildMassGroupNameMap(subgroups));
+    };
+
+    loadGroupNames();
+
+    return () => {
+      active = false;
+    };
+    // finalCodeGroupCodesKey stands in for the codes themselves — see its memo.
+  }, [isFinalCodeOpen, finalCodeGroupCodesKey, axiosPrivate]);
+
+  const updateDraft = (itemNo, fieldKey, value) => {
+    if (!isItemEditable(detail.items.find(item => item.itemNo === itemNo))) {
+      return;
+    }
+    // Clear error for this field
+    setFieldErrors(prev => {
+      const errKey = `${itemNo}::${fieldKey}`;
+      if (!prev[errKey]) return prev;
+      const next = { ...prev };
+      delete next[errKey];
+      return next;
+    });
+
+    setItemDrafts(prev => {
+      const current = prev[itemNo];
+      const originalItem = detail.items.find(i => i.itemNo === itemNo);
+      const originalValue = originalItem ? originalItem[fieldKey] ?? "" : "";
+
+      if (value === originalValue) {
+        if (!current) return prev;
+        const next = { ...current };
+        delete next[fieldKey];
+        if (Object.keys(next).length === 0) {
+          const rest = { ...prev };
+          delete rest[itemNo];
+          return rest;
+        }
+        return { ...prev, [itemNo]: next };
+      }
+
+      return {
+        ...prev,
+        [itemNo]: {
+          ...current,
+          [fieldKey]: normalizeMassMaterialFieldValue(value),
+        },
+      };
+    });
+  };
+
+  const handleViewAttachment = attachment => {
+    const url = buildAttachmentUrl(attachment);
+    if (!url) {
+      return;
+    }
+    setPreviewFile({ name: attachment.name, url, type: attachment.type || "" });
+    setPreviewOpen(true);
+  };
+
+  const handleAttachmentBrowseClick = itemNo => {
+    if (!isItemEditable(detail.items.find(item => item.itemNo === itemNo))) {
+      return;
+    }
+    setActiveAttachmentItemNo(itemNo);
+    // The click fires after the ref's target item is set, since the same
+    // hidden input is shared by every row.
+    requestAnimationFrame(() => attachmentInputRef.current?.click());
+  };
+
+  const handleAttachmentFileChange = event => {
+    const itemNo = activeAttachmentItemNo;
+    const files = Array.from(event.target.files || []);
+    if (itemNo !== null && files.length > 0) {
+      const current = itemAttachments[itemNo] || [];
+      const result = normalizeAttachmentSelection(files, current);
+      setItemAttachments(prev => ({ ...prev, [itemNo]: result.files }));
+      setItemAttachmentErrors(prev => ({ ...prev, [itemNo]: result.error || "" }));
+    }
+    if (attachmentInputRef.current) {
+      attachmentInputRef.current.value = "";
+    }
+  };
+
+  const handleRemoveItemAttachment = (itemNo, indexToRemove) => {
+    if (!isItemEditable(detail.items.find(item => item.itemNo === itemNo))) {
+      return;
+    }
+    setItemAttachments(prev => ({
+      ...prev,
+      [itemNo]: (prev[itemNo] || []).filter((_, index) => index !== indexToRemove),
+    }));
+    setItemAttachmentErrors(prev => ({ ...prev, [itemNo]: "" }));
+  };
+
+  // Whether staging actually changed anything for an item — the resulting
+  // set differs from the ids it started with, or a new file was added.
+  const itemHasAttachmentChanges = item => {
+    const staged = itemAttachments[item.itemNo] || [];
+    const keepAttachmentIds = staged
+      .filter(attachment => attachment.existing)
+      .map(attachment => attachment.id)
+      .filter(id => id !== null && id !== undefined);
+    const newFiles = staged.filter(attachment => !attachment.existing);
+    const originalIds = (item.attachments || [])
+      .map(attachment => attachment.id)
+      .filter(id => id !== null && id !== undefined);
+
+    return (
+      newFiles.length > 0 ||
+      keepAttachmentIds.length !== originalIds.length ||
+      !originalIds.every(id => keepAttachmentIds.includes(id))
+    );
+  };
+
+  // Per-item keep/add set for every item whose attachments were actually
+  // touched, keyed by item id (the id the approve/rework endpoint keys rows
+  // by, not the display-only itemNo). Reject discards this entirely — see
+  // the caller — and so does `include` for the items it leaves out.
+  const buildItemAttachmentChanges = (include = () => true) => {
+    const changes = [];
+    for (const item of detail.items) {
+      if (!include(item) || !itemHasAttachmentChanges(item)) {
+        continue;
+      }
+      const staged = itemAttachments[item.itemNo] || [];
+      changes.push({
+        id: item.id,
+        keepAttachmentIds: staged
+          .filter(attachment => attachment.existing)
+          .map(attachment => attachment.id)
+          .filter(id => id !== null && id !== undefined),
+        files: staged.filter(attachment => !attachment.existing),
+      });
+    }
+    return changes;
+  };
+
+  // Blocks the action when an item the reviewer ACTUALLY TOUCHED ends up with
+  // an attachment set that violates the shared min/max — the same rule the
+  // requester's mass form enforces per row.
+  //
+  // Only touched items are checked. An item the reviewer left alone keeps
+  // whatever it arrived with, and re-validating it here would block approving
+  // a batch for a state the reviewer did not create and cannot fix from this
+  // dialog.
+  const validateItemAttachments = (include = () => true) => {
+    const errors = {};
+    for (const item of detail.items) {
+      if (!include(item) || !itemHasAttachmentChanges(item)) {
+        continue;
+      }
+      const staged = itemAttachments[item.itemNo] || [];
+      const message = getAttachmentValidationError(staged);
+      if (message) {
+        errors[item.itemNo] = message;
+      }
+    }
+    setItemAttachmentErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  // Check if any items have been edited
+  const hasEdits = Object.keys(itemDrafts).length > 0;
+
+  // Collect edited items in snake_case for the API payload
+  const buildEditedItemsPayload = (include = () => true) => {
+    const edited = [];
+    for (const itemNoStr of Object.keys(itemDrafts)) {
+      const itemNo = Number(itemNoStr);
+      const originalItem = detail.items.find(i => i.itemNo === itemNo);
+      if (!originalItem || !include(originalItem)) continue;
+
+      const changes = itemDrafts[itemNoStr];
+      const payload = { id: originalItem.id };
+
+      for (const meta of EDITABLE_FIELD_META) {
+        if (changes[meta.key] !== undefined) {
+          payload[meta.dbKey] = changes[meta.key];
+        }
+      }
+
+      edited.push(payload);
+    }
+    return edited;
+  };
+
+  // Required fields that have been edited cannot be empty. `include` limits the
+  // check to the items whose edits are actually being sent.
+  const validateEditedRequiredFields = (include = () => true) => {
+    const errors = {};
+    for (const itemNoStr of Object.keys(itemDrafts)) {
+      const itemNo = Number(itemNoStr);
+      const originalItem = detail.items.find(i => i.itemNo === itemNo);
+      if (!originalItem || !include(originalItem)) continue;
+      const changes = itemDrafts[itemNoStr];
+      for (const fieldKey of REQUIRED_FIELD_KEYS) {
+        if (
+          changes[fieldKey] !== undefined &&
+          String(changes[fieldKey] ?? "").trim() === ""
+        ) {
+          errors[`${itemNo}::${fieldKey}`] = true;
+        }
+      }
+    }
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  // Action button handlers — open the remark dialog
+  const handleApproveClick = () => {
+    if (!validateItemAttachments()) {
+      return;
+    }
+
+    if (hasEdits && !validateEditedRequiredFields()) {
+      return;
+    }
+
+    setCurrentAction("Approve");
+    setRemarkText("");
+    setRemarkError("");
+    setFinalCodeSuffixes({});
+    setFinalCodeSuffixErrors({});
+    setFinalCodeGeneralError("");
+
+    // The Final Code dialog gates the Master Data (MDM) stage — that approval
+    // is the one that composes every item's material code and stages the batch.
+    if (isMdmStageActive) {
+      setFinalCodeDialogOpen(true);
+      return;
+    }
+
+    setRemarkDialogOpen(true);
+  };
+
+  const handleFinalCodeDialogClose = (_, reason) => {
+    if (
+      submitting &&
+      (reason === "backdropClick" || reason === "escapeKeyDown")
+    ) {
+      return;
+    }
+    if (submitting) return;
+    setFinalCodeDialogOpen(false);
+    setFinalCodeGeneralError("");
+  };
+
+  const handleFinalCodeSuffixChange = (itemId, value) => {
+    finalCodeSuffixes.current = {
+      ...finalCodeSuffixes.current,
+      [itemId]: value,
+    };
+    if (finalCodeSuffixErrors[itemId]) {
+      setFinalCodeSuffixErrors(prev => {
+        const next = { ...prev };
+        delete next[itemId];
+        return next;
+      });
+    }
+    if (finalCodeGeneralError) {
+      setFinalCodeGeneralError("");
+    }
+  };
+
+  const validateFinalCodeSuffixes = () => {
+    // Group/sub group are read through resolveField (not the raw item) so a
+    // group edited elsewhere in the dialog is what gets validated here — the
+    // group is two thirds of the material code being assembled.
+    const errors = validateMassFinalCodeSuffixes({
+      finalCodeSuffixes: finalCodeSuffixes.current,
+      items: finalCodeItems.map(item => ({
+        id: item.id,
+        itemNo: item.itemNo,
+        materialGroup: resolveField(item, "materialGroup"),
+        materialSubGroup: resolveField(item, "materialSubGroup"),
+      })),
+    });
+
+    setFinalCodeSuffixErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleFinalCodeNext = () => {
+    if (!validateFinalCodeSuffixes()) {
+      return;
+    }
+
+    setFinalCodeDialogOpen(false);
+    setFinalCodeGeneralError("");
+    setRemarkDialogOpen(true);
+  };
+
+  const handleReworkClick = () => {
+    if (!validateItemAttachments()) {
+      return;
+    }
+
+    setCurrentAction("Rework");
+    setRemarkText("");
+    setRemarkError("");
+    // The requester is the destination every time the dialog is opened, so a
+    // hand-picked approver is never inherited from a previous rework.
+    setReworkTarget(REWORK_TO_REQUESTER);
+    setReworkNotifyVia(NOTIFY_VIA_APP);
+    setReworkNewApprover(null);
+    // Dropping the draft re-arms the template fetch: the field unmounts with the
+    // reason dialog, so the next EMAIL choice pulls a fresh mail rather than
+    // reusing one composed for an earlier attempt.
+    setReworkEmailSubject("");
+    setReworkEmailBody("");
+    setReworkEmailErrors({ subject: "", body: "" });
+    setRemarkDialogOpen(true);
+  };
+
+  const handleRejectClick = () => {
+    setCurrentAction("Reject");
+    setRemarkText("");
+    setRemarkError("");
+    setRemarkDialogOpen(true);
+  };
+
+  // --- Master Data: per-item decisions --------------------------------------
+
+  const handleToggleItem = itemId => {
+    const key = String(itemId);
+    setSelectedItemIds(prev =>
+      prev.includes(key) ? prev.filter(id => id !== key) : [...prev, key]
+    );
+  };
+
+  const handleToggleAllItems = () => {
+    setSelectedItemIds(allSelected ? [] : selectableItemIds);
+  };
+
+  // Tag the ticked items with an action (null clears theirs), then untick them
+  // so the next pick starts from a clean selection.
+  const handleSetDecision = action => {
+    if (selectedCount === 0) {
+      return;
+    }
+    setItemDecisions(prev => applyMassDecision(prev, selectedItemIds, action));
+    setSelectedItemIds([]);
+    setDecisionError("");
+  };
+
+  const isDecisionApproved = item => decisionApproveIds.has(String(item.id));
+  const isDecisionAttachable = item => decisionAttachableIds.has(String(item.id));
+
+  const handleSubmitDecisionsClick = () => {
+    if (!decisionSummary.complete) {
+      setDecisionError(
+        `Choose Approve, Rework or Reject for ${formatMassItemNos(
+          decisionSummary.undecidedItemNos
+        )}.`
+      );
+      return;
+    }
+
+    if (!validateItemAttachments(isDecisionAttachable)) {
+      return;
+    }
+
+    if (hasEdits && !validateEditedRequiredFields(isDecisionApproved)) {
+      return;
+    }
+
+    // Remarks, running numbers and the rework destination carry over when
+    // Master Data backs out of the wizard to change a decision and comes back;
+    // they start empty when the batch dialog opens. The mail draft does not:
+    // it lists the reworked items, which may have just changed.
+    setCurrentAction(DECIDE_ACTION);
+    setDecisionError("");
+    setDecisionRemarkErrors({});
+    setFinalCodeSuffixErrors({});
+    setFinalCodeGeneralError("");
+    setReworkEmailSubject("");
+    setReworkEmailBody("");
+    setReworkEmailErrors({ subject: "", body: "" });
+
+    // Approve (when picked) is always the first step: approved items take
+    // their running numbers first, exactly as a whole-batch Master Data
+    // approval does.
+    setDecisionStep(decisionSteps[0]);
+  };
+
+  const handleDecisionRemarkChange = (action, value) => {
+    decisionRemarks.current = { ...decisionRemarks.current, [action]: value };
+    setDecisionRemarkErrors(prev => {
+      if (!prev[action]) return prev;
+      const next = { ...prev };
+      delete next[action];
+      return next;
+    });
+  };
+
+  // Field edits only travel with Approve, attachment changes with Approve or
+  // Rework. Whatever was staged on an item decided otherwise is not sent, and
+  // the confirm step says so instead of dropping it silently.
+  const hasDiscardedDecisionChanges =
+    currentAction === DECIDE_ACTION &&
+    detail.items.some(
+      item =>
+        (itemDrafts[item.itemNo] && !isDecisionApproved(item)) ||
+        (itemHasAttachmentChanges(item) && !isDecisionAttachable(item))
+    );
+
+  const requireDecisionRemark = action => {
+    if (decisionRemarks.current[action].trim()) {
+      return true;
+    }
+    setDecisionRemarkErrors(prev => ({
+      ...prev,
+      [action]: DECISION_REMARK_REQUIRED[action],
+    }));
+    return false;
+  };
+
+  // Whether the wizard may leave `action`'s step forward.
+  const validateDecisionStep = action => {
+    if (action === MASS_DECISION_APPROVE) {
+      // Both checked on one click, so every error on the step shows at once.
+      const suffixesValid = validateFinalCodeSuffixes();
+      return requireDecisionRemark(MASS_DECISION_APPROVE) && suffixesValid;
+    }
+
+    if (action === MASS_DECISION_REWORK) {
+      // An EMAIL rework has no box to fill: its reason comes from the subject.
+      if (!isReworkEmailReason && !requireDecisionRemark(MASS_DECISION_REWORK)) {
+        return false;
+      }
+      if (reworkDestinationError) {
+        return false;
+      }
+
+      const emailContentErrors = validateReworkEmailContent({
+        notifyVia: reworkEmailChannel,
+        subject: reworkEmailSubject.current,
+        body: reworkEmailBody.current,
+      });
+      setReworkEmailErrors(emailContentErrors);
+      return !hasReworkEmailContentError(emailContentErrors);
+    }
+
+    return requireDecisionRemark(MASS_DECISION_REJECT);
+  };
+
+  const submitDecisions = () => {
+    onAction?.("decide", null, null, {
+      requestBody: buildMassDecideRequestBody({
+        decisions: itemDecisions,
+        actionableItems,
+        remark: decisionRemarks.current[MASS_DECISION_APPROVE].trim(),
+        finalCodeSuffixes: finalCodeSuffixes.current,
+        items: buildEditedItemsPayload(isDecisionApproved),
+        reworkReason: isReworkEmailReason
+          ? deriveReworkEmailReason(reworkEmailSubject.current)
+          : decisionRemarks.current[MASS_DECISION_REWORK].trim(),
+        reworkDestination: canChooseReworkTarget
+          ? buildReworkDestinationPayload({
+              selectedValue: reworkTarget,
+              newApprover: reworkNewApprover,
+              notifyVia: reworkNotifyVia,
+              emailContent: buildReworkEmailPayload({
+                notifyVia: reworkEmailChannel,
+                subject: reworkEmailSubject.current,
+                body: reworkEmailBody.current,
+              }),
+            })
+          : {},
+        rejectReason: decisionRemarks.current[MASS_DECISION_REJECT].trim(),
+      }),
+      itemAttachmentChanges: buildItemAttachmentChanges(isDecisionAttachable),
+      decisionCounts: decisionSummary.counts,
+      // Confirmation copy only, as on the Rework path.
+      reworkDestinationLabel: canChooseReworkTarget
+        ? describeReworkDestination({ slots: reworkSlots, selectedValue: reworkTarget })
+        : null,
+      reworkRecipientEmail: reworkNewApprover?.email ?? "",
+    });
+  };
+
+  const handleDecisionStepNext = () => {
+    if (!validateDecisionStep(decisionStep)) {
+      return;
+    }
+
+    if (decisionStep === MASS_DECISION_APPROVE) {
+      setFinalCodeGeneralError("");
+    }
+
+    if (isLastDecisionStep) {
+      submitDecisions();
+      return;
+    }
+
+    setDecisionStep(decisionSteps[decisionStepIndex + 1]);
+  };
+
+  // Back to the previous step; from the first one, out of the wizard. Nothing
+  // entered on any step is lost.
+  const handleDecisionStepBack = () => {
+    if (submitting) return;
+    setDecisionStep(decisionStepIndex > 0 ? decisionSteps[decisionStepIndex - 1] : null);
+  };
+
+  const handleDecisionStepClose = (_, reason) => {
+    if (
+      submitting &&
+      (reason === "backdropClick" || reason === "escapeKeyDown")
+    ) {
+      return;
+    }
+    if (submitting) return;
+    setDecisionStep(null);
+  };
+
+  // Remark dialog confirm — fire the action.
+  // Approval, Rework, and Reject all require a non-empty remark/reason.
+  const handleRemarkConfirm = () => {
+    const trimmed = remarkText.current.trim();
+
+    // An EMAIL rework has no box to leave empty: its reason comes from the
+    // subject, which the blank-draft check below is what guards.
+    if (!trimmed && !isReworkEmailReason) {
+      const message =
+        currentAction === "Rework"
+          ? "Rework reason is required."
+          : currentAction === "Reject"
+            ? "Reject reason is required."
+            : "Approve remark is required.";
+      setRemarkError(message);
+      return;
+    }
+
+    if (currentAction === "Rework") {
+      if (reworkDestinationError) {
+        return;
+      }
+
+      // The endpoint rejects a blank subject or body with
+      // MASS_REWORK_EMAIL_CONTENT_REQUIRED; catching it here keeps the
+      // half-written mail on screen instead of losing it to a 400.
+      const emailContentErrors = validateReworkEmailContent({
+        notifyVia: reworkEmailChannel,
+        subject: reworkEmailSubject.current,
+        body: reworkEmailBody.current,
+      });
+      setReworkEmailErrors(emailContentErrors);
+      if (hasReworkEmailContentError(emailContentErrors)) {
+        return;
+      }
+
+      // Absent unless Master Data actually had the choice, so every other
+      // rework keeps sending exactly what it sent before.
+      onAction?.(
+        "rework",
+        // The mail's own subject stands in for the reason nobody was asked to
+        // type; the box is what every other destination still sends.
+        isReworkEmailReason ? deriveReworkEmailReason(reworkEmailSubject.current) : trimmed,
+        null,
+        {
+          ...(canChooseReworkTarget
+            ? {
+                ...buildReworkDestinationPayload({
+                  selectedValue: reworkTarget,
+                  newApprover: reworkNewApprover,
+                  notifyVia: reworkNotifyVia,
+                  emailContent: buildReworkEmailPayload({
+                    notifyVia: reworkEmailChannel,
+                    subject: reworkEmailSubject.current,
+                    body: reworkEmailBody.current,
+                  }),
+                }),
+                // Confirmation copy only — the page strips it before POSTing.
+                reworkDestinationLabel: describeReworkDestination({
+                  slots: reworkSlots,
+                  selectedValue: reworkTarget,
+                }),
+                // Likewise copy-only: the "Via email" snackbar names the address
+                // the mail went to, and only the dialog holds it.
+                reworkRecipientEmail: reworkNewApprover?.email ?? "",
+              }
+            : {}),
+          // Rework carries attachment changes too: like Approve, it is a
+          // recorded action, so a change made here has a reason attached to it.
+          itemAttachmentChanges: buildItemAttachmentChanges(),
+        }
+      );
+      return;
+    }
+
+    if (currentAction === "Reject") {
+      // Reject discards any staged attachment changes — they never reach
+      // onAction at all.
+      onAction?.("reject", trimmed, null);
+      return;
+    }
+
+    // Approve — include edited items if any, plus the per-item running numbers
+    // when this is the Master Data stage (the only stage the backend expects
+    // them on), plus any staged attachment changes.
+    onAction?.(
+      "approve",
+      trimmed,
+      hasEdits ? buildEditedItemsPayload() : null,
+      {
+        ...(isMdmStageActive ? { finalCodeSuffixes: finalCodeSuffixes.current } : {}),
+        itemAttachmentChanges: buildItemAttachmentChanges(),
+      }
+    );
+  };
+
+  const handleClose = () => {
+    setItemDrafts({});
+    setItemDecisions({});
+    setSelectedItemIds([]);
+    setDecisionError("");
+    setRemarkDialogOpen(false);
+    setCurrentAction("");
+    setRemarkText("");
+    setRemarkError("");
+    setFinalCodeDialogOpen(false);
+    setFinalCodeSuffixes({});
+    setFinalCodeSuffixErrors({});
+    setFinalCodeGeneralError("");
+    setItemAttachments(buildInitialItemAttachments(detail.items));
+    setItemAttachmentErrors({});
+    onClose?.();
+  };
+
+  const handleRemarkDialogClose = (_, reason) => {
+    if (
+      submitting &&
+      (reason === "backdropClick" || reason === "escapeKeyDown")
+    ) {
+      return;
+    }
+    if (submitting) return;
+    setRemarkDialogOpen(false);
+  };
+
+  const decisionStepNextLabel = submitting
+    ? "Saving..."
+    : isLastDecisionStep
+      ? "Submit"
+      : "Next";
+
+  // Shown on the wizard's first step only, before anything is sent.
+  const discardedChangesAlert = hasDiscardedDecisionChanges ? (
+    <Alert severity="info" sx={{ mb: 2, borderRadius: 1 }}>
+      Field edits are saved only for approved items, and attachment changes
+      only for approved or reworked items. Changes staged on the other items
+      will be discarded.
+    </Alert>
+  ) : null;
+
+  const renderDecisionRemarkField = action => (
+    <TextField
+      fullWidth
+      multiline
+      minRows={action === MASS_DECISION_REWORK ? 14 : 3}
+      maxRows={action === MASS_DECISION_REWORK ? 24 : 3}
+      placeholder={
+        action === MASS_DECISION_APPROVE
+          ? "Approve remark..."
+          : `${MASS_DECISION_LABELS[action]} reason...`
+      }
+      key={`${decisionRemarkInputKey}-${action}`}
+      defaultValue={decisionRemarks.current[action]}
+      error={Boolean(decisionRemarkErrors[action])}
+      helperText={decisionRemarkErrors[action]}
+      disabled={submitting}
+      onChange={event => handleDecisionRemarkChange(action, event.target.value)}
+      sx={{
+        "& .MuiInputBase-root": {
+          bgcolor: "#f5f5f5",
+        },
+      }}
+    />
+  );
+
+  return (
+    <>
+      <Dialog open={open} onClose={handleClose} maxWidth="lg" fullWidth>
+        {/* Header */}
+        <Box
+          sx={{
+            px: { xs: 2, sm: 3 },
+            py: 2,
+            borderBottom: "1px solid",
+            borderColor: "divider",
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 2,
+          }}
+        >
+          <Box>
+            <Typography
+              variant="overline"
+              sx={{ fontWeight: 800, color: "text.secondary" }}
+            >
+              Mass Request Approval
+            </Typography>
+            <Typography
+              variant="h5"
+              sx={{ fontWeight: 900, color: "#455a64", lineHeight: 1.1 }}
+            >
+              {detail.massRequestNo}
+            </Typography>
+            <Typography
+              variant="body2"
+              sx={{ mt: 0.75, fontWeight: 600, color: "text.secondary" }}
+            >
+              {detail.massRequestReason}
+            </Typography>
+          </Box>
+          <IconButton onClick={handleClose} aria-label="Close">
+            <Close />
+          </IconButton>
+        </Box>
+
+        <DialogContent dividers sx={{ px: { xs: 2, sm: 3 }, py: 2.5 }}>
+          <Stack spacing={2.5}>
+            {/* Summary card */}
+            <Paper
+              elevation={0}
+              sx={{
+                p: 2,
+                border: "1px solid",
+                borderColor: "divider",
+                borderRadius: 2,
+                bgcolor: "#fbfcfe",
+              }}
+            >
+              <Stack spacing={1.25}>
+                <Box
+                  sx={{
+                    display: "grid",
+                    gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+                    gap: 1.25,
+                  }}
+                >
+                  <Box>
+                    <Typography
+                      variant="caption"
+                      sx={{ display: "block", fontWeight: 800, mb: 0.5 }}
+                    >
+                      Status
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{ fontWeight: 600, color: "text.secondary" }}
+                    >
+                      {detail.status || "-"}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography
+                      variant="caption"
+                      sx={{ display: "block", fontWeight: 800, mb: 0.5 }}
+                    >
+                      Assigned To
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{ fontWeight: 600, color: "text.secondary" }}
+                    >
+                      {detail.assignedTo || "-"}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography
+                      variant="caption"
+                      sx={{ display: "block", fontWeight: 800, mb: 0.5 }}
+                    >
+                      Item Count
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{ fontWeight: 600, color: "text.secondary" }}
+                    >
+                      {detail.itemCount}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography
+                      variant="caption"
+                      sx={{ display: "block", fontWeight: 800, mb: 0.5 }}
+                    >
+                      Requested By
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{ fontWeight: 600, color: "text.secondary" }}
+                    >
+                      {detail.createdBy || "-"}
+                    </Typography>
+                  </Box>
+                </Box>
+              </Stack>
+            </Paper>
+
+            {/* Editable items table */}
+            <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+              {/* No count while the items are still coming — "Items (0)"
+                  flipping to "Items (24)" is the same pop the table below
+                  used to have. */}
+              {itemsLoading ? "Items" : `Items (${detail.items.length})`}
+            </Typography>
+
+            {/* Master Data decides each item on its own: tick items, tag them
+                with an action, repeat, then submit the whole batch at once. */}
+            {isDecideMode && !itemsLoading && actionableItems.length > 0 && (
+              <Paper
+                variant="outlined"
+                sx={{
+                  p: 1.5,
+                  borderRadius: 2,
+                  display: "flex",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 1,
+                }}
+              >
+                <Box sx={{ mr: "auto" }}>
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                    {selectedCount > 0
+                      ? `${selectedCount} selected`
+                      : "Tick items, then choose what happens to them."}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Every item waiting at Master Data needs a decision before you submit.
+                  </Typography>
+                </Box>
+                {MASS_DECISION_ACTIONS.map(action => (
+                  <Button
+                    key={action}
+                    size="small"
+                    variant="contained"
+                    disabled={selectedCount === 0 || submitting}
+                    onClick={() => handleSetDecision(action)}
+                    sx={{
+                      ...DECISION_STYLES[action],
+                      textTransform: "none",
+                      fontWeight: 800,
+                    }}
+                  >
+                    {MASS_DECISION_LABELS[action]}
+                  </Button>
+                ))}
+                <Button
+                  size="small"
+                  color="inherit"
+                  disabled={selectedCount === 0 || submitting}
+                  onClick={() => handleSetDecision(null)}
+                  sx={{ textTransform: "none", fontWeight: 700 }}
+                >
+                  Clear
+                </Button>
+              </Paper>
+            )}
+
+            <TableContainer
+              component={Paper}
+              variant="outlined"
+              sx={{ borderRadius: 2, maxHeight: 480 }}
+            >
+              <Table size="small" sx={{ borderCollapse: "collapse", minWidth: "calc(100% + 560px)" }}>
+                <TableHead>
+                  <TableRow sx={{ bgcolor: "#f5f7f9" }}>
+                    {isDecideMode && (
+                      <TableCell
+                        padding="checkbox"
+                        align="center"
+                        sx={{ border: "1px solid #e0e0e0" }}
+                      >
+                        <Checkbox
+                          size="small"
+                          checked={allSelected}
+                          indeterminate={selectedCount > 0 && !allSelected}
+                          disabled={selectableItemIds.length === 0 || submitting}
+                          onChange={handleToggleAllItems}
+                          inputProps={{ "aria-label": "Select every item waiting at Master Data" }}
+                        />
+                      </TableCell>
+                    )}
+                    <TableCell
+                      align="center"
+                      sx={{
+                        fontWeight: 700,
+                        border: "1px solid #e0e0e0",
+                        py: 1.5,
+                        width: 40,
+                      }}
+                    >
+                      #
+                    </TableCell>
+                    <TableCell
+                      sx={{
+                        fontWeight: 700,
+                        border: "1px solid #e0e0e0",
+                        py: 1.5,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Request No
+                    </TableCell>
+                    {showItemStateColumn && (
+                      <TableCell
+                        sx={{
+                          fontWeight: 700,
+                          border: "1px solid #e0e0e0",
+                          py: 1.5,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {isDecideMode ? "Decision" : "Item Status"}
+                      </TableCell>
+                    )}
+                    {/* Right after the item's identity and state, where they are
+                        read first — not past the wide editable columns. */}
+                    {hasSapColumns && (
+                      <TableCell
+                        sx={{
+                          fontWeight: 700,
+                          border: "1px solid #e0e0e0",
+                          py: 1.5,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        Material Code
+                      </TableCell>
+                    )}
+                    {hasSapColumns && (
+                      <TableCell
+                        sx={{
+                          fontWeight: 700,
+                          border: "1px solid #e0e0e0",
+                          py: 1.5,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        SAP Status
+                      </TableCell>
+                    )}
+                    {EDITABLE_FIELD_META.map(meta => (
+                      <TableCell
+                        key={meta.key}
+                        sx={{
+                          fontWeight: 700,
+                          border: "1px solid #e0e0e0",
+                          py: 1.5,
+                          whiteSpace: "nowrap",
+                          ...(meta.key === "materialDescription" ? { width: 680, minWidth: 680 } : {}),
+                        }}
+                      >
+                        {meta.label}
+                      </TableCell>
+                    ))}
+                    <TableCell
+                      sx={{
+                        fontWeight: 700,
+                        border: "1px solid #e0e0e0",
+                        py: 1.5,
+                        minWidth: 220,
+                      }}
+                    >
+                      Attachments
+                      {/* Limits sit under the column header rather than beside each
+                          row's Add button: every row carries the same rule, and
+                          repeating it per item would fill the column with copy. */}
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ display: "block", fontWeight: 400 }}
+                      >
+                        {ATTACHMENT_SUPPORTED_FORMATS_TEXT}
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ display: "block", fontWeight: 400 }}
+                      >
+                        {ATTACHMENT_SIZE_LIMIT_TEXT}
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {itemsLoading ? (
+                    <TableLoadingRows columns={itemColumnCount} />
+                  ) : detail.items.length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={itemColumnCount}
+                        align="center"
+                        sx={{ py: 3 }}
+                      >
+                        <Typography variant="body2" color="text.secondary">
+                          No items available
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    // Only the items waiting at this viewer's step can be edited,
+                    // ticked or decided; the rest are shown as they are.
+                    detail.items.map(item => (
+                      <TableRow
+                        key={item.itemNo}
+                        selected={selectedItemIds.includes(String(item.id))}
+                        sx={canAct && !isItemEditable(item) ? { bgcolor: "#fafafa" } : undefined}
+                      >
+                        {isDecideMode && (
+                          <TableCell
+                            padding="checkbox"
+                            align="center"
+                            sx={{ border: "1px solid #e0e0e0" }}
+                          >
+                            <Checkbox
+                              size="small"
+                              checked={selectedItemIds.includes(String(item.id))}
+                              disabled={!isItemEditable(item) || submitting}
+                              onChange={() => handleToggleItem(item.id)}
+                              inputProps={{ "aria-label": `Select item ${item.itemNo}` }}
+                            />
+                          </TableCell>
+                        )}
+                        <TableCell
+                          align="center"
+                          sx={{
+                            border: "1px solid #e0e0e0",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {item.itemNo}
+                        </TableCell>
+                        <TableCell
+                          sx={{
+                            border: "1px solid #e0e0e0",
+                            fontWeight: 600,
+                            color: "text.secondary",
+                          }}
+                        >
+                          {item.requestNo}
+                        </TableCell>
+                        {showItemStateColumn && (
+                          <TableCell sx={{ border: "1px solid #e0e0e0", whiteSpace: "nowrap" }}>
+                            {isDecideMode && isItemEditable(item) ? (
+                              itemDecisions[String(item.id)] ? (
+                                <Chip
+                                  label={MASS_DECISION_LABELS[itemDecisions[String(item.id)]]}
+                                  size="small"
+                                  sx={{
+                                    fontWeight: 800,
+                                    ...DECISION_STYLES[itemDecisions[String(item.id)]],
+                                  }}
+                                />
+                              ) : (
+                                <Typography variant="caption" color="text.secondary">
+                                  Undecided
+                                </Typography>
+                              )
+                            ) : (
+                              <Chip
+                                label={describeMassItemState(item)}
+                                size="small"
+                                sx={{
+                                  fontWeight: 700,
+                                  ...resolveMassItemStateStyle(describeMassItemState(item)),
+                                }}
+                              />
+                            )}
+                          </TableCell>
+                        )}
+                        {hasSapColumns && (
+                          <TableCell
+                            sx={{
+                              border: "1px solid #e0e0e0",
+                              fontWeight: 700,
+                              whiteSpace: "nowrap",
+                              color: "text.secondary",
+                            }}
+                          >
+                            {getStagedMaterialCode(item) || "-"}
+                          </TableCell>
+                        )}
+                        {hasSapColumns && (
+                          <TableCell sx={{ border: "1px solid #e0e0e0" }}>
+                            <ItemSapStatus item={item} />
+                          </TableCell>
+                        )}
+                        {EDITABLE_FIELD_META.map(meta => {
+                          const isMultiline =
+                            meta.key === "poText" ||
+                            meta.key === "spesifikasiTambahan";
+                          return (
+                            <TableCell
+                              key={meta.key}
+                              sx={{
+                                border: "1px solid #e0e0e0",
+                                verticalAlign: "top",
+                                p: 0.5,
+                                minWidth: meta.key === "materialDescription" ? 680 : 120,
+                              }}
+                            >
+                              <TextField
+                                size="small"
+                                variant="standard"
+                                fullWidth
+                                multiline={isMultiline}
+                                minRows={isMultiline ? 1 : undefined}
+                                maxRows={4}
+                                value={resolveField(item, meta.key)}
+                                error={Boolean(fieldErrors[`${item.itemNo}::${meta.key}`])}
+                                helperText={
+                                  fieldErrors[`${item.itemNo}::${meta.key}`]
+                                    ? `${meta.label} cannot be empty`
+                                    : undefined
+                                }
+                                onChange={e =>
+                                  updateDraft(
+                                    item.itemNo,
+                                    meta.key,
+                                    e.target.value
+                                  )
+                                }
+                                disabled={!isItemEditable(item) || submitting}
+                                inputProps={{
+                                  style: { fontSize: "0.8125rem" },
+                                  ...(meta.key === "materialDescription" ? { maxLength: 40 } : {}),
+                                }}
+                              />
+                            </TableCell>
+                          );
+                        })}
+                        <TableCell
+                          sx={{
+                            border: "1px solid #e0e0e0",
+                            verticalAlign: "top",
+                            p: 0.75,
+                          }}
+                        >
+                          <Stack spacing={0.5}>
+                            {(itemAttachments[item.itemNo] || []).map((attachment, index) => {
+                              const fileUrl = buildAttachmentUrl(attachment);
+                              return (
+                                <Stack
+                                  // A staged file has no id yet, so it is keyed by
+                                  // its own identity rather than its position —
+                                  // removing a row shifts every index after it.
+                                  key={
+                                    attachment.id ??
+                                    `new-${attachment.name}-${attachment.size}-${attachment.lastModified}`
+                                  }
+                                  direction="row"
+                                  alignItems="center"
+                                  spacing={0.5}
+                                >
+                                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                                    <Typography
+                                      variant="caption"
+                                      noWrap
+                                      // Rendered as a real button when there is
+                                      // something to open, so the preview is
+                                      // reachable by keyboard as well as click.
+                                      {...(fileUrl
+                                        ? {
+                                            component: "button",
+                                            type: "button",
+                                            onClick: () => handleViewAttachment(attachment),
+                                            title: `${attachment.name} — click to view file`,
+                                          }
+                                        : { title: attachment.name })}
+                                      sx={{
+                                        display: "block",
+                                        maxWidth: "100%",
+                                        ...(fileUrl && {
+                                          width: "100%",
+                                          p: 0,
+                                          border: "none",
+                                          bgcolor: "transparent",
+                                          textAlign: "left",
+                                          color: "inherit",
+                                          cursor: "pointer",
+                                          "&:hover": {
+                                            textDecoration: "underline",
+                                            color: "primary.main",
+                                          },
+                                        }),
+                                      }}
+                                    >
+                                      {attachment.name}
+                                      {attachment.existing ? "" : " (new)"}
+                                    </Typography>
+                                    {attachment.uploadedBy ? (
+                                      <Typography
+                                        variant="caption"
+                                        color="text.secondary"
+                                        noWrap
+                                        sx={{ display: "block", fontSize: "0.65rem" }}
+                                      >
+                                        By {attachment.uploadedBy}
+                                      </Typography>
+                                    ) : null}
+                                  </Box>
+                                  {isItemEditable(item) && (
+                                    <IconButton
+                                      size="small"
+                                      color="error"
+                                      onClick={() =>
+                                        handleRemoveItemAttachment(item.itemNo, index)
+                                      }
+                                      aria-label={`Remove ${attachment.name}`}
+                                    >
+                                      <Delete sx={{ fontSize: 16 }} />
+                                    </IconButton>
+                                  )}
+                                </Stack>
+                              );
+                            })}
+                            {isItemEditable(item) && (
+                              <Button
+                                size="small"
+                                startIcon={<AttachFile sx={{ fontSize: 16 }} />}
+                                onClick={() => handleAttachmentBrowseClick(item.itemNo)}
+                                disabled={
+                                  submitting ||
+                                  (itemAttachments[item.itemNo] || []).length >= MAX_ATTACHMENTS
+                                }
+                                sx={{ textTransform: "none", alignSelf: "flex-start", p: 0, minWidth: 0 }}
+                              >
+                                Add
+                              </Button>
+                            )}
+                            {itemAttachmentErrors[item.itemNo] && (
+                              <Typography variant="caption" color="error">
+                                {itemAttachmentErrors[item.itemNo]}
+                              </Typography>
+                            )}
+                          </Stack>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+
+            {/* Advisory AI ranking per item; see MaterialAiMatchPanel. */}
+            <MaterialAiMatchPanel kind="mass" requestId={row?.id} open={open} />
+
+            {/* Shared by every row's "Add" button — which item a pick lands on
+                is tracked in activeAttachmentItemNo, set just before the click
+                is forwarded here. */}
+            <input
+              ref={attachmentInputRef}
+              type="file"
+              multiple
+              hidden
+              accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+              onChange={handleAttachmentFileChange}
+            />
+
+            {/* Renders nothing at all unless this batch actually has rework
+                mail, so a request that never used the EMAIL channel looks
+                exactly as it did before. */}
+            <ReworkEmailThreadSection
+              enabled={open && (isMdmUser || isAdminOverride)}
+              requestKind={REWORK_EMAIL_KIND_MASS}
+              requestId={row?.id}
+            />
+          </Stack>
+        </DialogContent>
+
+        {/* Action buttons */}
+        <Box
+          sx={{
+            px: { xs: 2, sm: 3 },
+            py: 2,
+            borderTop: "1px solid",
+            borderColor: "divider",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 1.5,
+          }}
+        >
+          <Stack spacing={0.75}>
+            {claimNotice && (
+              <Typography variant="caption" sx={{ color: "#c2410c", fontWeight: 700 }}>
+                {claimNotice}
+              </Typography>
+            )}
+            {grabError && (
+              <Typography variant="caption" color="error" sx={{ fontWeight: 700 }}>
+                {grabError}
+              </Typography>
+            )}
+            {isDecideMode && actionableItems.length > 0 && (
+              <Typography variant="body2" sx={{ fontWeight: 700, color: "text.secondary" }}>
+                {formatMassDecisionSummary(decisionSummary)}
+              </Typography>
+            )}
+            {decisionError && (
+              <Typography variant="caption" color="error" sx={{ fontWeight: 700 }}>
+                {decisionError}
+              </Typography>
+            )}
+          </Stack>
+          <Stack direction="row" spacing={1.5} useFlexGap flexWrap="wrap">
+            {canGrabMdm && (
+              <Button
+                variant="contained"
+                startIcon={<CheckCircle />}
+                disabled={submitting || grabbing}
+                onClick={handleGrabMdm}
+                sx={{ bgcolor: "#0f766e", textTransform: "none", fontWeight: 800 }}
+              >
+                {grabbing ? MDM_GRAB_BUTTON_BUSY_LABEL : MDM_GRAB_BUTTON_LABEL}
+              </Button>
+            )}
+            {isDecideMode ? (
+              <Button
+                variant="contained"
+                startIcon={<CheckCircle />}
+                onClick={handleSubmitDecisionsClick}
+                // Clickable while items are undecided, so the click can say which.
+                disabled={actionableItems.length === 0 || submitting}
+                sx={{ bgcolor: "#0b35d9", textTransform: "none", fontWeight: 800 }}
+              >
+                Submit Decisions
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="contained"
+                  startIcon={<Cancel />}
+                  onClick={handleRejectClick}
+                  disabled={!canAct || submitting}
+                  sx={{ bgcolor: "#c62828", textTransform: "none", fontWeight: 800 }}
+                >
+                  Reject All
+                </Button>
+                <Button
+                  variant="contained"
+                  startIcon={<Replay />}
+                  onClick={handleReworkClick}
+                  disabled={!canAct || submitting}
+                  sx={{ bgcolor: "#9c27b0", textTransform: "none", fontWeight: 800 }}
+                >
+                  Rework All
+                </Button>
+                <Button
+                  variant="contained"
+                  startIcon={<CheckCircle />}
+                  onClick={handleApproveClick}
+                  disabled={!canAct || submitting}
+                  sx={{ bgcolor: "#0b35d9", textTransform: "none", fontWeight: 800 }}
+                >
+                  Approve All
+                </Button>
+              </>
+            )}
+          </Stack>
+        </Box>
+      </Dialog>
+
+      {/* Attachment preview — the shared viewer, so an approver / Master Data
+          reads a batch's files without downloading them first. Opened per item
+          from the Attachments column above. */}
+      <AttachmentPreviewDialog
+        open={previewOpen}
+        file={previewFile}
+        onClose={() => setPreviewOpen(false)}
+      />
+
+      {/* Final Code dialog — Master Data stage only, ahead of the remark step.
+          In the per-item decision wizard it is the Approve step, carrying the
+          approve remark under the running numbers. */}
+      <Dialog
+        open={isFinalCodeOpen}
+        onClose={decisionStep ? handleDecisionStepClose : handleFinalCodeDialogClose}
+        // Five columns, two of which now carry a name caption under the code.
+        // "sm" wrapped them into an unreadable stack.
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 2 } }}
+      >
+        <Stack alignItems="center" spacing={1} sx={{ pt: 3, px: 3 }}>
+          {decisionStep === MASS_DECISION_APPROVE && (
+            <DecisionStepCaption
+              index={decisionStepIndex}
+              total={decisionSteps.length}
+              action={MASS_DECISION_APPROVE}
+              itemNos={decisionSummary.itemNosByAction[MASS_DECISION_APPROVE]}
+            />
+          )}
+          <WarningAmber sx={{ color: "warning.main", fontSize: 40 }} />
+          <Typography variant="h6" sx={{ fontWeight: 900 }}>
+            Final Code Required
+          </Typography>
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            align="center"
+            sx={{ maxWidth: 560 }}
+          >
+            {MASS_FINAL_CODE_SUFFIX_HELPER_TEXT}
+          </Typography>
+        </Stack>
+
+        <DialogContent sx={{ pt: 3 }}>
+          {decisionStep === MASS_DECISION_APPROVE && discardedChangesAlert}
+          {finalCodeGeneralError && (
+            <Alert severity="error" sx={{ mb: 2, borderRadius: 1 }}>
+              {finalCodeGeneralError}
+            </Alert>
+          )}
+          <TableContainer
+            component={Paper}
+            variant="outlined"
+            sx={{ borderRadius: 2, maxHeight: 420 }}
+          >
+            {/* stickyHeader so the column names stay put while Master Data
+                works down a long batch one running number at a time. */}
+            <Table size="small" stickyHeader>
+              <TableHead>
+                <TableRow>
+                  {FINAL_CODE_COLUMNS.map(column => (
+                    <TableCell
+                      key={column.label}
+                      align="center"
+                      sx={{
+                        fontWeight: 700,
+                        bgcolor: "background.neutral",
+                        borderBottom: "1px solid",
+                        borderColor: "divider",
+                        width: column.width,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {column.label}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {finalCodeItems.map(item => {
+                  // Read through the same draft resolver the editable items
+                  // table uses, so a group/description edited elsewhere in
+                  // this dialog shows up here immediately rather than the
+                  // stale original value.
+                  const materialGroup = resolveMassGroupLabel(
+                    resolveField(item, "materialGroup"),
+                    groupNameMap
+                  );
+                  const materialSubGroup = resolveMassGroupLabel(
+                    resolveField(item, "materialSubGroup"),
+                    subGroupNameMap
+                  );
+                  const description = joinMassItemDescription(
+                    resolveField(item, "materialDescription"),
+                    resolveField(item, "poText")
+                  );
+
+                  return (
+                    <TableRow
+                      key={item.itemNo}
+                      sx={{
+                        "&:nth-of-type(odd)": { bgcolor: "action.hover" },
+                        "& > td": { borderBottom: "none" },
+                      }}
+                    >
+                      <TableCell align="center" sx={{ fontWeight: 700 }}>
+                        {item.itemNo}
+                      </TableCell>
+                      <TableCell align="center" sx={{ color: "text.secondary" }}>
+                        {description || "-"}
+                      </TableCell>
+                      <TableCell align="center">
+                        <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                          {materialGroup.code || "-"}
+                        </Typography>
+                        {materialGroup.name && (
+                          <Typography variant="caption" color="text.secondary">
+                            {materialGroup.name}
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell align="center">
+                        <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                          {materialSubGroup.code || "-"}
+                        </Typography>
+                        {materialSubGroup.name && (
+                          <Typography variant="caption" color="text.secondary">
+                            {materialSubGroup.name}
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell align="center" sx={{ p: 1 }}>
+                        <RunningNumberField
+                          key={`${finalCodeInputKey}-${item.id}`}
+                          size="small"
+                          initialValue={finalCodeSuffixes.current[String(item.id)] || ""}
+                          placeholder="A01"
+                          disabled={submitting}
+                          error={Boolean(finalCodeSuffixErrors[String(item.id)])}
+                          helperText={finalCodeSuffixErrors[String(item.id)] || ""}
+                          inputProps={{
+                            maxLength: MASS_FINAL_CODE_SUFFIX_LENGTH,
+                            "aria-label": `Running Number item ${item.itemNo}`,
+                            style: {
+                              textAlign: "center",
+                              fontWeight: 700,
+                              letterSpacing: "0.15em",
+                            },
+                          }}
+                          sx={{ width: 110, bgcolor: "background.paper" }}
+                          FormHelperTextProps={{ sx: { textAlign: "center", mx: 0 } }}
+                          onChange={value =>
+                            handleFinalCodeSuffixChange(
+                              String(item.id),
+                              value
+                            )
+                          }
+                        />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          {decisionStep === MASS_DECISION_APPROVE && (
+            <Box sx={{ mt: 2.5 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1 }}>
+                Approve Remark
+              </Typography>
+              {renderDecisionRemarkField(MASS_DECISION_APPROVE)}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3, pt: 0, gap: 1, justifyContent: "center" }}>
+          <Button
+            variant="outlined"
+            color="inherit"
+            onClick={decisionStep ? handleDecisionStepBack : handleFinalCodeDialogClose}
+            disabled={submitting}
+            sx={{ textTransform: "none", fontWeight: 800, minWidth: 120 }}
+          >
+            Back
+          </Button>
+          <Button
+            variant="contained"
+            onClick={decisionStep ? handleDecisionStepNext : handleFinalCodeNext}
+            disabled={submitting}
+            sx={{ textTransform: "none", fontWeight: 800, minWidth: 120 }}
+          >
+            {decisionStep ? decisionStepNextLabel : "Next"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Remark dialog — shown after clicking any action button */}
+      <Dialog
+        open={remarkDialogOpen}
+        onClose={handleRemarkDialogClose}
+        maxWidth={currentAction === "Rework" ? "lg" : "xs"}
+        fullWidth
+        PaperProps={
+          currentAction === "Rework"
+            ? {
+                sx: {
+                  m: { xs: 1.5, sm: 3 },
+                  width: { xs: "calc(100% - 24px)", sm: "calc(100% - 48px)" },
+                  maxHeight: { xs: "calc(100% - 24px)", sm: "calc(100% - 48px)" },
+                },
+              }
+            : undefined
+        }
+      >
+        <Box sx={{ p: 2, display: "flex", alignItems: "center", gap: 1 }}>
+          <WarningAmber sx={{ color: "#f59e0b" }} />
+          <Typography variant="h6" sx={{ fontWeight: 900 }}>
+            {currentAction ? `${currentAction} Reason` : "Reason"}
+          </Typography>
+        </Box>
+        <DialogContent sx={{ pt: 0 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            {isReworkEmailReason
+              ? "Please review the email below before proceeding with rework."
+              : currentAction
+                ? `Please enter the reason before proceeding with ${currentAction.toLowerCase()}.`
+                : "Please enter the reason before proceeding."}
+          </Typography>
+          {canChooseReworkTarget && (
+            <ReworkDestinationField
+              slots={reworkSlots}
+              value={reworkTarget}
+              onChange={setReworkTarget}
+              onNewApproverChange={setReworkNewApprover}
+              newApprover={reworkNewApprover}
+              notifyVia={reworkNotifyVia}
+              onNotifyViaChange={setReworkNotifyVia}
+              excludeIdentifiers={reworkExcludedIdentifiers}
+              disabled={submitting}
+              errorText={reworkDestinationError}
+              requestKind={REWORK_EMAIL_KIND_MASS}
+              requestId={row?.id}
+              emailSubject={reworkEmailSubject.current}
+              emailSubjectInputKey={emailSubjectInputKey}
+              emailBodyInputKey={emailBodyInputKey}
+              onEmailSubjectBlur={refreshEmailReason}
+              emailBody={reworkEmailBody.current}
+              onEmailSubjectChange={handleReworkEmailSubjectChange}
+              onEmailBodyChange={handleReworkEmailBodyChange}
+              onEmailTemplateLoaded={handleReworkEmailTemplateLoaded}
+              emailErrors={reworkEmailErrors}
+            />
+          )}
+          {isReworkEmailReason ? (
+            <Box
+              sx={{
+                p: 1.5,
+                borderRadius: 1,
+                bgcolor: "#f5f5f5",
+                border: "1px solid",
+                borderColor: "divider",
+              }}
+            >
+              <Typography variant="caption" color="text.secondary">
+                {REWORK_EMAIL_REASON_NOTICE}
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={{ mt: 0.5, fontWeight: 700, wordBreak: "break-word" }}
+              >
+                {reworkEmailReason}
+              </Typography>
+            </Box>
+          ) : (
+            <TextField
+              fullWidth
+              multiline
+              minRows={currentAction === "Rework" ? 14 : 4}
+              maxRows={currentAction === "Rework" ? 24 : 4}
+              placeholder="Enter your message here..."
+              key={remarkInputKey}
+              defaultValue={remarkText.current}
+              error={Boolean(remarkError)}
+              helperText={remarkError}
+              onChange={e => {
+                remarkText.current = e.target.value;
+                if (remarkError) setRemarkError("");
+              }}
+              sx={{
+                "& .MuiInputBase-root": {
+                  bgcolor: "#f5f5f5",
+                },
+              }}
+            />
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            onClick={() => setRemarkDialogOpen(false)}
+            disabled={submitting}
+            sx={{ color: "text.secondary", textTransform: "none" }}
+          >
+            Close
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleRemarkConfirm}
+            disabled={submitting || Boolean(reworkDestinationError)}
+            sx={{ textTransform: "none", fontWeight: 800 }}
+          >
+            {submitting ? "Saving..." : currentAction || "Save"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Rework and Reject steps of the per-item decision wizard (Approve is
+          the Final Code dialog above): one action per step, each with its own
+          reason. */}
+      <Dialog
+        open={decisionStep === MASS_DECISION_REWORK || decisionStep === MASS_DECISION_REJECT}
+        onClose={handleDecisionStepClose}
+        maxWidth={decisionStep === MASS_DECISION_REWORK ? "lg" : "xs"}
+        fullWidth
+        PaperProps={
+          decisionStep === MASS_DECISION_REWORK
+            ? {
+                sx: {
+                  m: { xs: 1.5, sm: 3 },
+                  width: { xs: "calc(100% - 24px)", sm: "calc(100% - 48px)" },
+                  maxHeight: { xs: "calc(100% - 24px)", sm: "calc(100% - 48px)" },
+                },
+              }
+            : undefined
+        }
+      >
+        {(decisionStep === MASS_DECISION_REWORK || decisionStep === MASS_DECISION_REJECT) && (
+          <>
+            <Box sx={{ p: 2 }}>
+              <DecisionStepCaption
+                index={decisionStepIndex}
+                total={decisionSteps.length}
+                action={decisionStep}
+                itemNos={decisionSummary.itemNosByAction[decisionStep]}
+              />
+              <Box sx={{ mt: 1.5, display: "flex", alignItems: "center", gap: 1 }}>
+                <WarningAmber sx={{ color: "#f59e0b" }} />
+                <Typography variant="h6" sx={{ fontWeight: 900 }}>
+                  {MASS_DECISION_LABELS[decisionStep]} Reason
+                </Typography>
+              </Box>
+            </Box>
+            <DialogContent sx={{ pt: 0 }}>
+              {decisionStepIndex === 0 && discardedChangesAlert}
+              {decisionStep === MASS_DECISION_REWORK && canChooseReworkTarget && (
+                <ReworkDestinationField
+                  slots={reworkSlots}
+                  value={reworkTarget}
+                  onChange={setReworkTarget}
+                  onNewApproverChange={setReworkNewApprover}
+                  newApprover={reworkNewApprover}
+                  notifyVia={reworkNotifyVia}
+                  onNotifyViaChange={setReworkNotifyVia}
+                  excludeIdentifiers={reworkExcludedIdentifiers}
+                  disabled={submitting}
+                  errorText={reworkDestinationError}
+                  requestKind={REWORK_EMAIL_KIND_MASS}
+                  requestId={row?.id}
+                  itemIds={decisionSummary.itemIdsByAction[MASS_DECISION_REWORK]}
+                  emailSubject={reworkEmailSubject.current}
+                  emailSubjectInputKey={emailSubjectInputKey}
+                  emailBodyInputKey={emailBodyInputKey}
+                  onEmailSubjectBlur={refreshEmailReason}
+                  emailBody={reworkEmailBody.current}
+                  onEmailSubjectChange={handleReworkEmailSubjectChange}
+                  onEmailBodyChange={handleReworkEmailBodyChange}
+                  onEmailTemplateLoaded={handleReworkEmailTemplateLoaded}
+                  emailErrors={reworkEmailErrors}
+                />
+              )}
+              {decisionStep === MASS_DECISION_REWORK && isReworkEmailReason ? (
+                <Box
+                  sx={{
+                    p: 1.5,
+                    borderRadius: 1,
+                    bgcolor: "#f5f5f5",
+                    border: "1px solid",
+                    borderColor: "divider",
+                  }}
+                >
+                  <Typography variant="caption" color="text.secondary">
+                    {REWORK_EMAIL_REASON_NOTICE}
+                  </Typography>
+                  <Typography
+                    variant="body2"
+                    sx={{ mt: 0.5, fontWeight: 700, wordBreak: "break-word" }}
+                  >
+                    {reworkEmailReason}
+                  </Typography>
+                </Box>
+              ) : (
+                renderDecisionRemarkField(decisionStep)
+              )}
+            </DialogContent>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+              <Button
+                onClick={handleDecisionStepBack}
+                disabled={submitting}
+                sx={{ color: "text.secondary", textTransform: "none" }}
+              >
+                Back
+              </Button>
+              <Button
+                variant="contained"
+                onClick={handleDecisionStepNext}
+                disabled={
+                  submitting ||
+                  (decisionStep === MASS_DECISION_REWORK && Boolean(reworkDestinationError))
+                }
+                sx={{ textTransform: "none", fontWeight: 800 }}
+              >
+                {decisionStepNextLabel}
+              </Button>
+            </DialogActions>
+          </>
+        )}
+      </Dialog>
+    </>
+  );
+}

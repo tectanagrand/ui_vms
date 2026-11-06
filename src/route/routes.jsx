@@ -1,6 +1,8 @@
 import axios from "axios";
 import { lazy } from "react";
 import { Navigate, createBrowserRouter } from "react-router-dom";
+import DashboardIndexRedirect from "src/route/DashboardIndexRedirect";
+import ProtectedRoute from "src/route/ProtectedRoute";
 import ESubmissionDir from "src/pages/dashboard/ESubmissionDir";
 import FormVendorClient from "src/pages/dashboard/FormVendorClient";
 const NavigateETender = lazy(() => import("src/pages/e-tender/NavigateETender"));
@@ -9,11 +11,27 @@ const VendorLandingPage = lazy(() => import("src/pages/vendor/VendorLandingPage"
 const VendorUsers = lazy(() => import("src/pages/vendor/VendorUsers"));
 const VerificationPage = lazy(() => import("src/pages/verification/VerificationPage"));
 const DirectFormCreateNew = lazy(() => import("src/pages/create_new/DirectFormCreateNew"));
+const DirectCoupaForm = lazy(() => import("src/pages/coupa/DirectCoupaForm"));
 const LookupMaterials = lazy(() => import("src/pages/dashboard/LookupMaterials"));
+const RequestMaterials = lazy(() => import("src/pages/dashboard/RequestMaterials"));
 const Subgroups = lazy(() => import("src/pages/dashboard/SubgroupMaterial"));
 const Materials = lazy(() => import("src/pages/dashboard/MaterialDetail"));
 const SearchMaterials = lazy(() => import("src/pages/dashboard/SearchMaterials"));
+const MaterialsAdministratorOverview = lazy(
+  () => import("src/pages/dashboard/MaterialsAdministratorOverview")
+);
+const MaterialsApproverManagement = lazy(
+  () => import("src/pages/dashboard/MaterialsApproverManagement")
+);
+const MaterialsGuideUpload = lazy(() => import("src/pages/dashboard/MaterialsGuideUpload"));
+const MaterialsReport = lazy(() => import("src/pages/dashboard/MaterialsReport"));
+const MaterialsSlaReport = lazy(() => import("src/pages/dashboard/MaterialsSlaReport"));
+const MaterialsDashboard = lazy(
+  () => import("src/pages/dashboard/MaterialsDashboard")
+);
 const ReportTicketPosition = lazy(() => import("src/pages/report/ReportTicketPosition"));
+const SingleRequestPage = lazy(() => import("src/pages/dashboard/SingleRequestPage"));
+const AdminApprovalView = lazy(() => import("src/pages/dashboard/AdminApprovalView"));
 // import ErrorPage from '../pages/ErrorPage';
 // import Error404 from 'src/pages/Error404';
 // import LoginPage from 'src/pages/LoginPage';
@@ -46,6 +64,9 @@ const RefactorFormVendorPage = lazy(() => import("src/pages/RefactorFormVendorPa
 const ListMasterBank = lazy(() => import("src/pages/dashboard/ListMasterBank"));
 const TicketInvalid = lazy(() => import("src/pages/TicketInvalid"));
 const ResetPassword = lazy(() => import("src/pages/ResetPassword"));
+const ListCoupa = lazy(() => import("src/pages/coupa/ListPage"));
+const HistoryCoupa = lazy(() => import("src/pages/coupa/HistoryPage"));
+const HistoryDetail = lazy(() => import("src/pages/coupa/DetailVendor"));
 
 export const routes = createBrowserRouter([
   {
@@ -96,10 +117,10 @@ export const routes = createBrowserRouter([
     },
     errorElement: <ErrorPage />,
     children: [
-      // {
-      //   path: '',
-      //   element: <VendorLandingPage />,
-      // },
+      {
+        path: "",
+        element: <DashboardIndexRedirect />,
+      },
       {
         path: "form/:token",
         element: <DirectFormCreateNew />,
@@ -111,8 +132,29 @@ export const routes = createBrowserRouter([
         },
       },
       {
+        path: "form-coupa/:id",
+        element: <DirectCoupaForm />,
+        loader: ({ params }) => {
+          return {
+            id: params.id,
+          };
+        },
+      },
+      {
         path: "ticket",
         element: <ListTicket />,
+      },
+      {
+        path: "coupa",
+        element: <ListCoupa />,
+      },
+      {
+        path: "coupa/history",
+        element: <HistoryCoupa />,
+      },
+      {
+        path: "coupa/history/:id",
+        element: <HistoryDetail />,
       },
       {
         path: "vendor",
@@ -169,6 +211,94 @@ export const routes = createBrowserRouter([
       {
         path: "materials/lookup",
         element: <LookupMaterials />,
+      },
+      {
+        path: "materials/request",
+        element: <RequestMaterials />,
+      },
+      {
+        path: "materials/approvals",
+        element: <Navigate to="/dashboard/materials/approval" replace />,
+      },
+      {
+        path: "materials/approval",
+        // Approvers only: the backend narrows "My Approval" to users assigned
+        // as an approver (plus Master Data and ADMIN).
+        element: (
+          <ProtectedRoute page="My Approval">
+            <AdminApprovalView />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        // The sidebar's Administrator entry lands here: an overview that picks
+        // which administration tool to open.
+        path: "materials/administrator",
+        // The Administrator permission also protects each tool's own route.
+        element: (
+          <ProtectedRoute page="Administrator">
+            <MaterialsAdministratorOverview />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "materials/administrator/approvers",
+        element: (
+          <ProtectedRoute page="Administrator">
+            <MaterialsApproverManagement />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "materials/administrator/guide",
+        element: (
+          <ProtectedRoute page="Administrator">
+            <MaterialsGuideUpload />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "materials/report",
+        // Separate submenu, with the same Materials administrator audience.
+        element: (
+          <ProtectedRoute page="Administrator">
+            <MaterialsReport />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "materials/report/sla",
+        element: (
+          <ProtectedRoute page="Administrator">
+            <MaterialsSlaReport />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "materials/administrator/report",
+        element: <Navigate to="/dashboard/materials/report/sla" replace />,
+      },
+      {
+        // Sidebar: Materials > Dashboard (mst_page menu_id seeded by
+        // 20260918_materials_dashboard_menu.sql). Dashboard and user-guide tabs.
+        path: "materials/dashboard",
+        element: <MaterialsDashboard />,
+      },
+      {
+        path: "administrator/approval",
+        element: <Navigate to="/dashboard/materials/approval" replace />,
+      },
+      {
+        path: "materials/request/single",
+        element: <SingleRequestPage mode="single" />,
+      },
+      {
+        path: "materials/request/single/:id/rework",
+        element: <SingleRequestPage mode="rework" />,
+      },
+      {
+        path: "materials/request/mass",
+        element: <SingleRequestPage mode="mass" />,
       },
       {
         path: "subgroups/:groupId",

@@ -42,6 +42,7 @@ import SearchFieldComp from "src/components/common/SearchFieldComp";
 import TableSimple from "src/components/table/TableSimple";
 import useAxiosPrivate from "src/hooks/useAxiosPrivate";
 import usePaginationStore from "src/store/usePaginationStore";
+import useSessionStore from "src/store/useSessionStore";
 
 export default function Materials() {
   const { subgroupId } = useParams();
@@ -83,6 +84,11 @@ export default function Materials() {
   const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
   const [deleteAttachmentDialogOpen, setDeleteAttachmentDialogOpen] = useState(false);
   const [attachmentToDelete, setAttachmentToDelete] = useState(null);
+  // Master Data and the Materials administrators only; the DELETE endpoint
+  // enforces the same rule.
+  const canDeleteAttachments = useSessionStore(
+    state => state.is_mdm_material === true || state.is_material_admin === true
+  );
   const [sortField, setSortField] = useState("code");
   const [sortOrder, setSortOrder] = useState("asc");
   const [deleteMaterialDialogOpen, setDeleteMaterialDialogOpen] = useState(false);
@@ -362,7 +368,7 @@ export default function Materials() {
     // Set the file to preview and open the modal
     setPreviewFile({
       url: fileUrl,
-      name: attachment.attachment,
+      name: attachment.name || attachment.attachment,
       type: attachment.type || attachment.fileType || "application/octet-stream",
     });
     setPreviewModalOpen(true);
@@ -882,18 +888,20 @@ export default function Materials() {
                             edge="end"
                             onClick={() => handleViewAttachment(attachment)}
                             title="Preview file"
-                            sx={{ mr: 1 }}
+                            sx={canDeleteAttachments && !attachment.read_only ? { mr: 1 } : undefined}
                           >
                             <Visibility />
                           </IconButton>
-                          <IconButton
-                            edge="end"
-                            onClick={() => handleDeleteAttachment(attachment)}
-                            title="Delete attachment"
-                            color="error"
-                          >
-                            <Delete />
-                          </IconButton>
+                          {canDeleteAttachments && !attachment.read_only && (
+                            <IconButton
+                              edge="end"
+                              onClick={() => handleDeleteAttachment(attachment)}
+                              title="Delete attachment"
+                              color="error"
+                            >
+                              <Delete />
+                            </IconButton>
+                          )}
                         </Box>
                       }
                     >
@@ -901,7 +909,7 @@ export default function Materials() {
                         {getFileIcon(attachment.type || attachment.fileType)}
                       </ListItemIcon>
                       <ListItemText
-                        primary={attachment.attachment}
+                        primary={attachment.name || attachment.attachment}
                         secondary={attachment.type || attachment.fileType || "Unknown file type"}
                       />
                     </ListItem>

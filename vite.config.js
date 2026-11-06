@@ -1,33 +1,37 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import svgr from 'vite-plugin-svgr';
-import basicSsl from '@vitejs/plugin-basic-ssl';
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import svgr from "vite-plugin-svgr";
+import basicSsl from "@vitejs/plugin-basic-ssl";
 
 export default defineConfig(() => {
   return {
     optimizeDeps: {
-      include: ['@emotion/react', '@emotion/styled', '@mui/icons-material', 'lodash'],
+      include: ["@emotion/react", "@emotion/styled", "@mui/icons-material", "lodash"],
     },
     build: {
-      outDir: '../vendor_ms_app/public/build',
+      // The backend serves the built SPA from its own public/build
+      // (server.js: express.static(__dirname + "/public/build")), so the
+      // build has to land in the sibling vendor_ms_kpn checkout.
+      outDir: "../vendor_ms_kpn/public/build",
       emptyOutDir: true,
     },
     server: {
-      port: 3000,
-      open: '',
+      port: Number(process.env.VITE_PORT) || 3000,
+      strictPort: true,
+      open: "",
     },
     plugins: [
       react({
-        jsxImportSource: '@emotion/react',
+        jsxImportSource: "@emotion/react",
         babel: {
-          plugins: ['@emotion/babel-plugin'],
+          plugins: ["@emotion/babel-plugin"],
         },
       }),
       svgr(),
       basicSsl(),
     ],
     resolve: {
-      alias: [{ find: 'src', replacement: '/src' }],
+      alias: [{ find: "src", replacement: "/src" }],
     },
   };
 });

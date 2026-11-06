@@ -13,6 +13,13 @@ const useSessionStore = create((set, get) => {
     permission: {},
     menu: {},
     groupid: '',
+    // Master Data (MDM_MATERIAL) membership, as decided by the backend from the
+    // user's page-access group names. Never inferred here: role is "MATERIAL"
+    // for the whole department, so only this flag tells Master Data apart.
+    is_mdm_material: false,
+    // Materials administrator (ADMIN, or the MATERIAL_ADMIN group), as decided
+    // by the backend. Unlocks the approval dialogs' admin override.
+    is_material_admin: false,
     is_reset_pwd: true,
     setSessionStore: (payload) => {
       set({
@@ -27,6 +34,10 @@ const useSessionStore = create((set, get) => {
         permission: payload.permission,
         menu: payload.menu,
         groupid: payload.groupid,
+        // Anything short of an explicit true stays false, so a stale or partial
+        // payload can never hand out the Master Data view.
+        is_mdm_material: payload.is_mdm_material === true,
+        is_material_admin: payload.is_material_admin === true,
         is_reset_pwd: payload.is_reset_pwd,
       });
     },
@@ -43,6 +54,8 @@ const useSessionStore = create((set, get) => {
         permission: {},
         menu: {},
         groupid: {},
+        is_mdm_material: false,
+        is_material_admin: false,
         is_reset_pwd: true,
       });
     },
