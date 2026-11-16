@@ -59,7 +59,7 @@ export default function useTogglePanel() {
       case 'panelFile':
         setpanelFile((prev) => !prev);
         break;
-      case 'panelVenDetail':
+      case 'panelVendetail':
         setpanelVendetail((prev) => !prev);
         break;
       case 'panelCompOrg':
