@@ -40,6 +40,8 @@ import {
 import AttachmentPreviewDialog, {
   buildAttachmentUrl,
 } from "src/components/common/AttachmentPreviewDialog";
+import CommentImageInput from "src/components/common/CommentImageInput";
+import { formatCommentWithImages } from "src/helper/commentWithImages.js";
 import TableLoadingRows from "src/components/common/TableLoadingRows";
 import { buildMassApprovalDetail } from "src/helper/massApprovalDetail.js";
 import {
@@ -335,6 +337,13 @@ export default function MassApprovalFormDialog({
   const [decisionError, setDecisionError] = useState("");
   const [decisionRemarks, setDecisionRemarks, decisionRemarkInputKey] = useInputDraft(EMPTY_DECISION_REMARKS);
   const [decisionRemarkErrors, setDecisionRemarkErrors] = useState({});
+  const [remarkImages, setRemarkImages] = useState([]);
+  const [remarkImageUploading, setRemarkImageUploading] = useState(false);
+  const [decisionImages, setDecisionImages] = useState({
+    [MASS_DECISION_REWORK]: [],
+    [MASS_DECISION_REJECT]: [],
+  });
+  const [decisionImageUploading, setDecisionImageUploading] = useState(false);
   // The wizard step on screen (one of MASS_DECISION_ACTIONS), null when closed.
   const [decisionStep, setDecisionStep] = useState(null);
   const axiosPrivate = useAxiosPrivate();
@@ -371,6 +380,10 @@ export default function MassApprovalFormDialog({
       setDecisionRemarks(EMPTY_DECISION_REMARKS);
       setDecisionRemarkErrors({});
       setDecisionStep(null);
+      setRemarkImages([]);
+      setRemarkImageUploading(false);
+      setDecisionImages({ [MASS_DECISION_REWORK]: [], [MASS_DECISION_REJECT]: [] });
+      setDecisionImageUploading(false);
       // Discards staged attachment changes for every item — an abandoned
       // review must leave no trace, same as itemDrafts above.
       setItemAttachments(buildInitialItemAttachments(detail.items));
@@ -1029,6 +1042,8 @@ export default function MassApprovalFormDialog({
     setReworkEmailSubject("");
     setReworkEmailBody("");
     setReworkEmailErrors({ subject: "", body: "" });
+    setRemarkImages([]);
+    setRemarkImageUploading(false);
     setRemarkDialogOpen(true);
   };
 
@@ -1036,6 +1051,8 @@ export default function MassApprovalFormDialog({
     setCurrentAction("Reject");
     setRemarkText("");
     setRemarkError("");
+    setRemarkImages([]);
+    setRemarkImageUploading(false);
     setRemarkDialogOpen(true);
   };
 
@@ -1174,7 +1191,10 @@ export default function MassApprovalFormDialog({
         items: buildEditedItemsPayload(isDecisionApproved),
         reworkReason: isReworkEmailReason
           ? deriveReworkEmailReason(reworkEmailSubject.current)
-          : decisionRemarks.current[MASS_DECISION_REWORK].trim(),
+          : formatCommentWithImages(
+              decisionRemarks.current[MASS_DECISION_REWORK],
+              decisionImages[MASS_DECISION_REWORK]
+            ),
         reworkDestination: canChooseReworkTarget
           ? buildReworkDestinationPayload({
               selectedValue: reworkTarget,
@@ -1187,7 +1207,10 @@ export default function MassApprovalFormDialog({
               }),
             })
           : {},
-        rejectReason: decisionRemarks.current[MASS_DECISION_REJECT].trim(),
+        rejectReason: formatCommentWithImages(
+          decisionRemarks.current[MASS_DECISION_REJECT],
+          decisionImages[MASS_DECISION_REJECT]
+        ),
       }),
       itemAttachmentChanges: buildItemAttachmentChanges(isDecisionAttachable),
       decisionCounts: decisionSummary.counts,
@@ -1231,6 +1254,8 @@ export default function MassApprovalFormDialog({
       return;
     }
     if (submitting) return;
+    setDecisionImages({ [MASS_DECISION_REWORK]: [], [MASS_DECISION_REJECT]: [] });
+    setDecisionImageUploading(false);
     setDecisionStep(null);
   };
 
@@ -1276,7 +1301,9 @@ export default function MassApprovalFormDialog({
         "rework",
         // The mail's own subject stands in for the reason nobody was asked to
         // type; the box is what every other destination still sends.
-        isReworkEmailReason ? deriveReworkEmailReason(reworkEmailSubject.current) : trimmed,
+        isReworkEmailReason
+          ? deriveReworkEmailReason(reworkEmailSubject.current)
+          : formatCommentWithImages(trimmed, remarkImages),
         null,
         {
           ...(canChooseReworkTarget
@@ -1312,7 +1339,7 @@ export default function MassApprovalFormDialog({
     if (currentAction === "Reject") {
       // Reject discards any staged attachment changes — they never reach
       // onAction at all.
-      onAction?.("reject", trimmed, null);
+      onAction?.("reject", formatCommentWithImages(trimmed, remarkImages), null);
       return;
     }
 
@@ -2373,8 +2400,16 @@ export default function MassApprovalFormDialog({
               ]}
             />
           )}
+          {(currentAction === "Reject" || (currentAction === "Rework" && !isReworkEmailReason)) && (
+            <CommentImageInput
+              images={remarkImages}
+              onChange={setRemarkImages}
+              disabled={submitting}
+              onUploadingChange={setRemarkImageUploading}
+            />
+          )}
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
+        <DialogActions sx={{ px: 3, py: 2, borderTop: "1px solid", borderColor: "divider" }}>
           <Button
             onClick={() => setRemarkDialogOpen(false)}
             disabled={submitting}
@@ -2385,7 +2420,7 @@ export default function MassApprovalFormDialog({
           <Button
             variant="contained"
             onClick={handleRemarkConfirm}
-            disabled={submitting || Boolean(reworkDestinationError)}
+            disabled={submitting || remarkImageUploading || Boolean(reworkDestinationError)}
             sx={{ textTransform: "none", fontWeight: 800 }}
           >
             {submitting ? "Saving..." : currentAction || "Save"}
@@ -2468,6 +2503,17 @@ export default function MassApprovalFormDialog({
               ) : (
                 renderDecisionRemarkField(decisionStep)
               )}
+              {(decisionStep === MASS_DECISION_REJECT ||
+                (decisionStep === MASS_DECISION_REWORK && !isReworkEmailReason)) && (
+                <CommentImageInput
+                  images={decisionImages[decisionStep] || []}
+                  onChange={imgs =>
+                    setDecisionImages(prev => ({ ...prev, [decisionStep]: imgs }))
+                  }
+                  disabled={submitting}
+                  onUploadingChange={setDecisionImageUploading}
+                />
+              )}
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
               <Button
@@ -2482,6 +2528,7 @@ export default function MassApprovalFormDialog({
                 onClick={handleDecisionStepNext}
                 disabled={
                   submitting ||
+                  decisionImageUploading ||
                   (decisionStep === MASS_DECISION_REWORK && Boolean(reworkDestinationError))
                 }
                 sx={{ textTransform: "none", fontWeight: 800 }}

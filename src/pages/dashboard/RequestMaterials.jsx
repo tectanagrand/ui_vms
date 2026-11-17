@@ -81,6 +81,7 @@ import PageTabs from "src/components/common/PageTabs";
 import TableLoadingRows, { TableEmptyRow } from "src/components/common/TableLoadingRows";
 import SectionLoadingSkeleton from "src/components/common/SectionLoadingSkeleton";
 import ApprovalStatusCard from "src/components/common/ApprovalStatusCard";
+import CommentTextWithImages from "src/components/common/CommentTextWithImages";
 import AttachmentPreviewDialog, {
   buildAttachmentUrl,
 } from "src/components/common/AttachmentPreviewDialog";
@@ -270,9 +271,11 @@ function RequestActionDialog({ open, mode, request, onClose, onReviseRequest }) 
               <Typography variant="caption" sx={{ display: "block", mb: 0.75, fontWeight: 800 }}>
                 Reason
               </Typography>
-              <Typography variant="body2" sx={{ fontWeight: 600, color: "text.secondary" }}>
-                {detail.reworkSummary.reason || "-"}
-              </Typography>
+              <CommentTextWithImages
+                text={detail.reworkSummary.reason}
+                color="text.secondary"
+                sx={{ fontWeight: 600 }}
+              />
             </Paper>
           )}
 

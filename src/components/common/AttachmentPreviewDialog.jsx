@@ -61,8 +61,9 @@ function OpenFileButton({ file, sx }) {
  * @param {boolean} open - whether the viewer is showing
  * @param {{ name: string, url: string, type?: string }|null} file - file to display
  * @param {Function} onClose - called when the viewer is dismissed
+ * @param {boolean} [hideDownload] - omit the Download button when true
  */
-export default function AttachmentPreviewDialog({ open, file, onClose }) {
+export default function AttachmentPreviewDialog({ open, file, onClose, hideDownload = false }) {
   const [imageError, setImageError] = useState(false);
 
   // A newly opened file gets a fresh chance to load: the previous file's failure
@@ -129,10 +130,14 @@ export default function AttachmentPreviewDialog({ open, file, onClose }) {
           ))}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Close</Button>
-        <Button variant="contained" href={file?.url} download={file?.name} disabled={!file}>
-          Download
+        <Button onClick={onClose} variant={hideDownload ? "contained" : "text"}>
+          Close
         </Button>
+        {!hideDownload && (
+          <Button variant="contained" href={file?.url} download={file?.name} disabled={!file}>
+            Download
+          </Button>
+        )}
       </DialogActions>
     </Dialog>
   );

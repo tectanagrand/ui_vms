@@ -1,4 +1,5 @@
 import { Box, Paper, Stack, Typography } from "@mui/material";
+import CommentTextWithImages from "src/components/common/CommentTextWithImages";
 
 // Shared by the Requester's "View Approval" (RequestMaterials.jsx) and the
 // Approver/Master Data "View Approval" (AdminApprovalView.jsx) so both read
@@ -99,17 +100,14 @@ export default function ApprovalStatusCard({ item }) {
                 {item.approvedAt || "-"}
               </Typography>
               {hasRemark && (
-                <Typography
+                <CommentTextWithImages
+                  text={item.remark}
+                  align="right"
                   variant="caption"
-                  sx={{
-                    color: "text.secondary",
-                    textAlign: { xs: "left", sm: "right" },
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                  }}
-                >
-                  {item.remark}
-                </Typography>
+                  color="text.secondary"
+                  thumbnailSize={44}
+                  sx={{ mt: 0.5 }}
+                />
               )}
             </>
           )}

@@ -35,6 +35,9 @@ import AttachmentPreviewDialog, {
   buildAttachmentUrl,
   isImageFile,
 } from "src/components/common/AttachmentPreviewDialog";
+import CommentImageInput from "src/components/common/CommentImageInput";
+import CommentTextWithImages from "src/components/common/CommentTextWithImages";
+import { formatCommentWithImages } from "src/helper/commentWithImages.js";
 import SectionLoadingSkeleton from "src/components/common/SectionLoadingSkeleton";
 import useSessionStore from "src/store/useSessionStore";
 import { buildApprovalDetail } from "src/helper/adminApprovalDetail.js";
@@ -445,9 +448,20 @@ function ApprovalHistoryItem({ item }) {
             {item.remark || "Not required"}
           </Typography>
         ) : (
-          <Typography variant="caption" color="text.secondary">
-            {item.approvedAt}
-          </Typography>
+          <>
+            <Typography variant="caption" color="text.secondary">
+              {item.approvedAt}
+            </Typography>
+            {Boolean(item.remark) && item.remark !== "-" && (
+              <CommentTextWithImages
+                text={item.remark}
+                variant="caption"
+                color="text.secondary"
+                thumbnailSize={40}
+                sx={{ mt: 0.5 }}
+              />
+            )}
+          </>
         )}
       </Stack>
     </Paper>
@@ -745,6 +759,8 @@ export default function AdminApprovalFormDialog({
   const [previewFile, setPreviewFile] = useState(null);
   const [currentAction, setCurrentAction] = useState("");
   const [remarkText, setRemarkText, remarkInputKey] = useInputDraft("");
+  const [remarkImages, setRemarkImages] = useState([]);
+  const [remarkImageUploading, setRemarkImageUploading] = useState(false);
   const [reworkTarget, setReworkTarget] = useState(REWORK_TO_REQUESTER);
   // User hand-picked for the fillable "Approval 1" slot, and how they should be
   // told about it. Both only ever leave this component together with the
@@ -828,6 +844,8 @@ export default function AdminApprovalFormDialog({
       setFinalCodeDialogOpen(false);
       setCurrentAction("");
       setRemarkText("");
+      setRemarkImages([]);
+      setRemarkImageUploading(false);
       setReworkTarget(REWORK_TO_REQUESTER);
       setReworkNewApprover(null);
       setReworkNotifyVia(NOTIFY_VIA_APP);
@@ -1132,6 +1150,8 @@ export default function AdminApprovalFormDialog({
     setReworkEmailBody("");
     setReworkEmailErrors({ subject: "", body: "" });
     setRemarkError("");
+    setRemarkImages([]);
+    setRemarkImageUploading(false);
     setFinalCodeSuffix("");
     setFinalCodeSuffixError("");
     setRemarkDialogOpen(true);
@@ -1140,6 +1160,8 @@ export default function AdminApprovalFormDialog({
   const handleRejectClick = () => {
     setCurrentAction("Reject");
     setRemarkText("");
+    setRemarkImages([]);
+    setRemarkImageUploading(false);
     setRemarkError("");
     setFinalCodeSuffix("");
     setFinalCodeSuffixError("");
@@ -1167,6 +1189,8 @@ export default function AdminApprovalFormDialog({
       return;
     }
 
+    setRemarkImages([]);
+    setRemarkImageUploading(false);
     setRemarkDialogOpen(false);
   };
 
@@ -2162,8 +2186,16 @@ export default function AdminApprovalFormDialog({
               ]}
             />
           )}
+          {(currentAction === "Reject" || (currentAction === "Rework" && !isReworkEmailReason)) && (
+            <CommentImageInput
+              images={remarkImages}
+              onChange={setRemarkImages}
+              disabled={submitting}
+              onUploadingChange={setRemarkImageUploading}
+            />
+          )}
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
+        <DialogActions sx={{ px: 3, py: 2, borderTop: "1px solid", borderColor: "divider" }}>
           <Button
             onClick={handleRemarkDialogClose}
             disabled={submitting}
@@ -2173,6 +2205,7 @@ export default function AdminApprovalFormDialog({
           </Button>
           <Button
             variant="contained"
+            disabled={submitting || remarkImageUploading}
             onClick={() => {
               if (
                 (currentAction === "Reject" || currentAction === "Rework") &&
@@ -2208,7 +2241,7 @@ export default function AdminApprovalFormDialog({
               // asked to type; the box is what everything else still sends.
               const submittedRemark = isReworkEmailReason
                 ? deriveReworkEmailReason(reworkEmailSubject.current)
-                : remarkText.current;
+                : formatCommentWithImages(remarkText.current, remarkImages);
 
               // Absent unless Master Data actually had the choice, so every
               // other rework keeps sending exactly what it sent before.

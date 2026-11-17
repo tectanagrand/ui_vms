@@ -39,6 +39,7 @@ import MassApprovalFormDialog from "src/components/admin-approval/MassApprovalFo
 import MassReworkStatusDialog from "src/components/admin-approval/MassReworkStatusDialog";
 import MassApprovalStatusDialog from "src/components/admin-approval/MassApprovalStatusDialog";
 import ApprovalStatusCard from "src/components/common/ApprovalStatusCard";
+import CommentTextWithImages from "src/components/common/CommentTextWithImages";
 import RequestCommentsDialog from "src/components/common/RequestCommentsDialog";
 import { buildApprovalDetail } from "src/helper/adminApprovalDetail.js";
 import { resolveRequestCommentKind } from "src/helper/requestComments.js";
@@ -309,9 +310,11 @@ function ReworkStatusDialog({ open, row, onClose }) {
                 <Typography variant="caption" sx={{ display: "block", fontWeight: 800, mb: 0.5 }}>
                   Reason
                 </Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600, color: "text.secondary" }}>
-                  {reworkSummary.reason || "-"}
-                </Typography>
+                <CommentTextWithImages
+                  text={reworkSummary.reason}
+                  color="text.secondary"
+                  sx={{ fontWeight: 600 }}
+                />
               </Box>
             </Stack>
           </Paper>

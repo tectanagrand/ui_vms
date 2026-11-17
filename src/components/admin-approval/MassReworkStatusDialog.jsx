@@ -9,6 +9,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useMemo } from "react";
+import CommentTextWithImages from "src/components/common/CommentTextWithImages";
 import { buildMassReworkSummary } from "src/helper/massApprovalDetail.js";
 
 export default function MassReworkStatusDialog({ open, row, onClose }) {
@@ -109,12 +110,11 @@ export default function MassReworkStatusDialog({ open, row, onClose }) {
                 >
                   Rework Reason
                 </Typography>
-                <Typography
-                  variant="body2"
-                  sx={{ fontWeight: 600, color: "text.secondary" }}
-                >
-                  {reworkSummary?.reason || "-"}
-                </Typography>
+                <CommentTextWithImages
+                  text={reworkSummary?.reason}
+                  color="text.secondary"
+                  sx={{ fontWeight: 600 }}
+                />
               </Box>
             </Stack>
           </Paper>
