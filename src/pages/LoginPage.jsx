@@ -1,0 +1,251 @@
+import { Paper, Box, Button, Link, Backdrop } from "@mui/material";
+
+import useMediaQuery from "@mui/material/useMediaQuery";
+import { useForm } from "react-hook-form";
+import { TextFieldComp } from "src/components/common/TextFieldComp";
+import { Typography } from "@mui/material";
+import { useEffect, useState } from "react";
+import { useNavigate, Navigate } from "react-router-dom";
+import axios from "axios";
+import useSessionStore from "src/store/useSessionStore";
+import useAccessTokStore from "src/store/useAccessTokStore";
+import useCheckResetPWD from "src/store/useCheckResetPWD";
+import usePermissionStore from "src/store/userPermissionStore";
+import useMenuStore from "src/store/useMenuStore";
+import { resolveLandingRouteForSession } from "src/helper/landingRoute";
+import CircularProgress from "@mui/material/CircularProgress";
+import SvgIcon from "@mui/material/SvgIcon";
+import { PasswordWithEyes } from "src/components/common/PasswordWithEyes";
+import imgbg from "../images/gama-tower.jpg";
+import KpnNav from "../images/kpn-logo.svg?react";
+import { LoadingButton } from "@mui/lab";
+// import Cookies from 'js-cookie';
+
+function getLoginErrorMessage(error, apiBaseUrl = "") {
+  const response = error?.response;
+  const data = response?.data;
+  const message = data?.message;
+
+  if (typeof message === "string" && message.trim()) {
+    return message;
+  }
+
+  if (typeof data === "string") {
+    const trimmed = data.trim().toLowerCase();
+    if (trimmed.startsWith("<!doctype html") || trimmed.startsWith("<html")) {
+      const baseUrlInfo = apiBaseUrl ? ` (${apiBaseUrl})` : "";
+      return `Login API mengembalikan HTML, bukan JSON${baseUrlInfo}. Periksa VITE_URL_LOC dan pastikan backend API yang aktif.`;
+    }
+  }
+
+  if (response?.status === 404) {
+    const baseUrlInfo = apiBaseUrl ? ` (${apiBaseUrl})` : "";
+    return `Endpoint login tidak ditemukan${baseUrlInfo}. Periksa VITE_URL_LOC dan pastikan backend berjalan di URL tersebut.`;
+  }
+
+  if (typeof response?.statusText === "string" && response.statusText.trim()) {
+    return response.statusText;
+  }
+
+  if (typeof error?.message === "string" && error.message.trim()) {
+    return error.message;
+  }
+
+  return "Login gagal. Periksa koneksi backend dan konfigurasi API.";
+}
+
+const defaultValue = {
+  Username: "",
+  Password: "",
+  FormToken: "",
+};
+export default function LoginPage() {
+  const matches = useMediaQuery("(max-width:380px)");
+  const setSessionStore = useSessionStore(state => state.setSessionStore);
+  const setAccessToken = useAccessTokStore(state => state.setAccessToken);
+  const setIsResetPWD = useCheckResetPWD(state => state.setIsResetPWD);
+  const setPermission = usePermissionStore(state => state.setPermission);
+  const setMenu = useMenuStore(state => state.setMenu);
+  const [btnClicked, setBtnclicked] = useState();
+  const { handleSubmit, control } = useForm({ defaultValues: defaultValue });
+  const [openLoad, setOpenload] = useState(false);
+  const [dirForm, setDirform] = useState({ state: "login", html: "User with form link ?" });
+  const navigate = useNavigate();
+  const onSubmit = async data => {
+    setBtnclicked(true);
+    setOpenload(true);
+    if (dirForm.state === "form") {
+      navigate(`/frm/newform/${data.FormToken}`);
+    } else {
+      try {
+        const apiBaseUrl = import.meta.env.VITE_URL_LOC;
+        const logindata = await axios.post(`${apiBaseUrl}/user/login`, {
+          username: data.Username,
+          password: data.Password,
+        });
+        const response = logindata.data;
+        // setSession(response);
+        setSessionStore({
+          fullname: response.fullname,
+          username: response.username,
+          user_id: response.user_id,
+          emp_role_id: response.emp_role_id,
+          dept_id: response.dept_id,
+          bu_id: response.bu_id,
+          email: response.email,
+          role: response.role,
+          groupid: response.groupid,
+          // Login already resolved Master Data membership from the same group
+          // names /user/getsess uses, so seed it here too: the dashboard's own
+          // getsess would otherwise be the first thing to set it, leaving a real
+          // MDM user without the Pickup button and the assignment filters for
+          // the frame or two it takes to land.
+          is_mdm_material: response.user_group?.is_mdm_material,
+          is_material_admin: response.is_material_admin,
+        });
+        setMenu(response.menu);
+        setPermission(response.permission);
+        setAccessToken(response.accessToken);
+        setIsResetPWD(response.is_reset_pwd);
+        alert("Successfull login");
+        setTimeout(() => {
+          // Permission picks the landing page, not the department. Aiming every
+          // non-vendor department at the ticket list dropped users whose sidebar
+          // has no ticket list on it — a materials requester with no dept_id, for
+          // one. The department only expresses a preference now, and it is
+          // honoured solely when the user can actually reach it. /dashboard is
+          // the fallback: its index resolves the same route once the session has
+          // loaded, and reports the empty case when there is nothing to reach.
+          navigate(resolveLandingRouteForSession(response) ?? "/dashboard");
+        }, 1000);
+        setBtnclicked(false);
+      } catch (err) {
+        setOpenload(false);
+        setBtnclicked(false);
+        console.log(err);
+        alert(getLoginErrorMessage(err, import.meta.env.VITE_URL_LOC));
+      }
+    }
+  };
+
+  // useEffect(() => {
+  //   if (Cookies.get('accessToken')) {
+  //     if (Cookies.get('role') !== 'VENDOR') {
+  //       navigate('/dashboard/ticket');
+  //     } else {
+  //       navigate('/dashboard');
+  //     }
+  //   }
+  // }, [navigate]);
+
+  return (
+    <>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "100%",
+          width: "100%",
+          backgroundImage: `url(${imgbg})`,
+          backgroundRepeat: "no-repeat",
+          backgroundSize: "cover",
+        }}
+      >
+        <form onSubmit={handleSubmit(onSubmit)}>
+          <Paper
+            sx={{
+              display: "flex",
+              width: matches ? "18.75rem" : "37.5rem",
+              maxWidth: "calc(100vw - 32px)",
+              height: matches ? "37.5rem" : "18.75rem",
+              p: 3,
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+            elevation={3}
+          >
+            {/* <Box>
+              <SvgIcon>
+                <Logo />
+              </SvgIcon>
+            </Box> */}
+            <Box sx={{ display: "flex", gap: 1 }}>
+              <SvgIcon
+                component={KpnNav}
+                sx={{ width: "2rem", height: "2rem", mt: "0.1rem" }}
+                viewBox="0 0 5000 5000"
+                color="white"
+              />
+              <Typography variant="h4" sx={{ mb: matches ? "5rem" : "2rem", pb: "0.5rem" }}>
+                Vendor Management System KPN
+              </Typography>
+            </Box>
+            <Box sx={{ display: "flex", flexDirection: "column", width: "100%", gap: 1 }}>
+              {dirForm.state === "login" && (
+                <TextFieldComp
+                  name={"Username"}
+                  control={control}
+                  label={"Username"}
+                  rules={{ required: true }}
+                />
+              )}
+              {dirForm.state === "login" && (
+                <PasswordWithEyes
+                  name={"Password"}
+                  control={control}
+                  label={"Password"}
+                  rules={{ required: true }}
+                  sx={{ m: 1 }}
+                />
+              )}
+            </Box>
+            {dirForm.state === "form" && (
+              <TextFieldComp
+                name={"FormToken"}
+                control={control}
+                label={"Token Form"}
+                rules={{ required: true }}
+              />
+            )}
+            <Box
+              sx={{
+                display: "flex",
+                justifyContent: "flex-end",
+                alignItems: "center",
+                height: matches ? "3.125rem" : "6.25rem",
+                width: "100%",
+              }}
+            >
+              <Link
+                onClick={() => {
+                  navigate("/resetpass");
+                }}
+              >
+                Forgot Password ?
+              </Link>
+              {dirForm.state === "login" && (
+                <LoadingButton
+                  type="submit"
+                  sx={{ height: "3.125rem", m: 1, width: "6.25rem" }}
+                  loading={btnClicked}
+                >
+                  Login
+                </LoadingButton>
+              )}
+              {dirForm.state === "form" && (
+                <Button type="submit" sx={{ height: "3.125rem", m: 1, width: "6.25rem" }}>
+                  Open
+                </Button>
+              )}
+            </Box>
+          </Paper>
+        </form>
+      </Box>
+      <Backdrop sx={{ color: "#fff", zIndex: theme => theme.zIndex.drawer + 1 }} open={openLoad}>
+        <CircularProgress color="inherit" />
+      </Backdrop>
+    </>
+  );
+}
